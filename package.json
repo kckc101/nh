@@ -1,0 +1,22 @@
+{
+  "name": "e-rave-cambodia-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "E-Rave Cambodia web client: avatar studio, Three.js festival world, HUD and DJ panel.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide": "^1.52.0",
+    "socket.io-client": "^4.8.4",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.3"
+  }
+}
