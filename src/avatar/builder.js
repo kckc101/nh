@@ -226,6 +226,27 @@ export function buildAvatarGeometry(input) {
   };
 }
 
+/**
+ * Far-LOD stand-in: the whole raver as one static mesh of ~10 boxes in its own colours
+ * (one draw call, no skeleton to animate). Proportions match the rest pose.
+ */
+export function buildImpostorGeometry(input) {
+  const c = normalizeAvatar(input);
+  const accent = accentColor(c.accent);
+  const P = new Parts();
+  const upper = c.top === 'tank' ? c.skin : c.top === 'vest' ? '#17171f' : c.topColor;
+  for (const s of [1, -1]) {
+    P.box(0.46, 0.95, 0.48, c.pantsColor, { x: s * 0.24, y: 0.475 });
+    P.box(0.4, 0.88, 0.42, upper, { x: s * 0.7, y: 1.37 });
+  }
+  P.box(1, 0.95, 0.5, c.topColor, { y: 1.425, pattern: c.top === 'kroma' ? 1 : 0, glow: c.top === 'vest' ? 0.25 : 0 });
+  P.box(1.02, 0.07, 0.52, accent, { y: 1.25, glow: 1 });
+  P.box(0.72, 0.72, 0.72, c.skin, { y: 2.36 });
+  if (c.hair !== 'none') P.box(0.76, 0.14, 0.76, c.hairColor, { y: 2.74 });
+  if (c.head !== 'none') P.box(0.8, 0.12, 0.8, c.head === 'crown' ? '#e2b23a' : accent, { y: 2.86, glow: 0.8 });
+  return P.build();
+}
+
 function buildHair(P, style, color, accent, covered) {
   const cap = () => P.box(0.76, 0.12, 0.76, color, { y: 0.84 });
   const back = (h) => P.box(0.76, h, 0.08, color, { y: 0.82 - h / 2, z: -0.37 });

@@ -1,6 +1,7 @@
 // E-Rave Cambodia — app flow: landing → avatar studio → festival.
 
 import './style.css';
+import { polyfillCountryFlagEmojis } from 'country-flag-emoji-polyfill';
 import { AudioEngine } from './audio/engine.js';
 import { Network } from './net/network.js';
 import { LiveMic } from './net/rtc.js';
@@ -13,6 +14,10 @@ import { toast } from './ui/dom.js';
 import { params, settings, saveSettings, isMobile } from './core/device.js';
 import { load, save } from './core/store.js';
 import { normalizeAvatar, randomAvatar } from './avatar/options.js';
+
+// Windows has no flag-emoji glyphs (🇰🇭 shows as "KH"): load a flags-only web font there.
+// Self-hosted next to index.html so it works offline and from a GitHub Pages sub-path.
+polyfillCountryFlagEmojis('Twemoji Country Flags', new URL('TwemojiCountryFlags.woff2', document.baseURI).href);
 
 const ui = document.getElementById('ui');
 const app = document.getElementById('app');
@@ -40,10 +45,16 @@ const FX_LABEL = {
 };
 
 async function fontsReady() {
+  // Google Fonts splits each family into unicode-range subsets; pass sample text so the
+  // Khmer subsets are fetched before any canvas (signs, LED wall, name tags) draws Khmer.
+  const KM = 'កម្ពុជា ភ្នំពេញ សួស្តី';
   const loads = [
-    document.fonts.load('48px Koulen'),
+    document.fonts.load('48px Koulen', 'E-RAVE'),
+    document.fonts.load('48px Koulen', KM),
     document.fonts.load('600 32px "Chakra Petch"'),
-    document.fonts.load('32px "Kantumruy Pro"', 'កម្ពុជា'),
+    document.fonts.load('32px "Kantumruy Pro"', KM),
+    document.fonts.load('600 32px "Kantumruy Pro"', KM),
+    document.fonts.load('32px "Twemoji Country Flags"', '🇰🇭'),
   ];
   await Promise.race([Promise.allSettled(loads), new Promise((r) => setTimeout(r, 2500))]);
 }
@@ -138,6 +149,10 @@ function enterFestival(profile, welcome) {
       joystick: (x, y) => player.setJoystick(x, y),
       toggleDJ: () => djPanel?.toggle(),
       quality: (q) => world.setQuality(q),
+      autoPerf: (on) => {
+        world.gov.setEnabled(on);
+        world.applyPerf();
+      },
       bots: (n) => {
         settings.bots = n;
         saveSettings();
@@ -209,7 +224,8 @@ function enterFestival(profile, welcome) {
     world.stage.led.setText(ledLines(text), '', 8);
   });
   net.on('rtc:live', ({ live }) => hud.setMicLive(live));
-  mic.on('change', (live) => hud.setMicLive(live));
+  mic.on('change', (s) => hud.setMicLive(s.live));
+  mic.on('error', (text) => !isDJ && toast(text, 'error', 5000)); // the DJ panel shows its own errors inline
   net.on('rejoined', (w) => {
     crowd.clearRemotes();
     for (const p of w.players || []) crowd.addRemote(p);
@@ -268,6 +284,9 @@ function enterFestival(profile, welcome) {
   setInterval(refreshStatus, 2000);
   refreshStatus();
   world.on('fps', (fps) => hud.setStats(fps, net.online ? net.rtt : 0));
+  world.on('perf', (s) => hud.setPerf(s));
+  hud.setPerf(world.gov.state);
+  world.on('degrade', (s) => toast(s.tier === 1 ? 'Low frame rate: turned off bloom to keep it smooth' : 'Still struggling: lighter particles and simpler distant avatars', 'info', 3500));
   world.on('quality', (q) => {
     hud.markQuality(q);
     toast(`Graphics: ${q}`);

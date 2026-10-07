@@ -13,6 +13,7 @@ export const settings = Object.assign(
     reduceFlash: prefersReducedMotion,
     bots: isMobile ? 22 : 46,
     autoFx: true,
+    autoPerf: true, // dynamic resolution + automatic effect fallback
   },
   load('erave.settings', {}),
 );

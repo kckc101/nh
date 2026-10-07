@@ -1,7 +1,7 @@
 // Festival HUD: now-playing + visualizer, connection / FPS / volume, dance & reaction bar,
 // TikTok-style floating reactions, DJ announcement banner, hype popups, settings & help.
 
-import { el, $, $$, toast } from './dom.js';
+import { el, $, $$, toast, markKhmer } from './dom.js';
 import { icon, renderIcons } from './icons.js';
 import { Chat } from './chat.js';
 import { createJoystick } from './joystick.js';
@@ -118,6 +118,7 @@ export class HUD {
           <div><div class="text-[11px] tracking-[.2em] text-white/45 mb-1.5 flex justify-between"><span>SIMULATED CROWD</span><span class="bots-n text-white/70">${settings.bots}</span></div>
             <input type="range" min="0" max="90" step="1" value="${settings.bots}" class="bots w-full accent-[#ff2bd6]" aria-label="Simulated crowd size"/></div>
           <label class="flex items-center justify-between gap-3 cursor-pointer"><span>Reduce flashing lights</span><input type="checkbox" class="reduce size-4 accent-[#ff2bd6]" ${settings.reduceFlash ? 'checked' : ''}/></label>
+          <label class="flex items-center justify-between gap-3 cursor-pointer"><span>Auto performance<span class="block text-[11px] text-white/45">Dynamic resolution · drops effects below 30 FPS</span></span><input type="checkbox" class="autoperf size-4 accent-[#ff2bd6]" ${settings.autoPerf !== false ? 'checked' : ''}/></label>
           <label class="flex items-center justify-between gap-3 cursor-pointer"><span>Auto pyro on drops</span><input type="checkbox" class="autofx size-4 accent-[#ff2bd6]" ${settings.autoFx ? 'checked' : ''}/></label>
         </div>
 
@@ -184,6 +185,11 @@ export class HUD {
     $(n, '.reduce').addEventListener('change', (e) => {
       settings.reduceFlash = e.target.checked;
       saveSettings();
+    });
+    $(n, '.autoperf').addEventListener('change', (e) => {
+      settings.autoPerf = e.target.checked;
+      saveSettings();
+      actions.autoPerf?.(e.target.checked);
     });
     $(n, '.autofx').addEventListener('change', (e) => {
       settings.autoFx = e.target.checked;
@@ -259,7 +265,22 @@ export class HUD {
   }
 
   setStats(fps, ping) {
-    this.els.stats.textContent = `${fps} FPS${ping ? ` · ${ping} ms` : ''}`;
+    this.fps = fps;
+    this.ping = ping;
+    this.renderStats();
+  }
+
+  setPerf({ scale, tierName }) {
+    this.perf = { scale, tierName };
+    this.renderStats();
+  }
+
+  renderStats() {
+    const parts = [`${this.fps ?? '--'} FPS`];
+    if (this.perf && this.perf.scale < 0.99) parts.push(`${Math.round(this.perf.scale * 100)}% res`);
+    if (this.perf && this.perf.tierName !== 'full') parts.push(this.perf.tierName);
+    if (this.ping) parts.push(`${this.ping} ms`);
+    this.els.stats.textContent = parts.join(' · ');
   }
 
   setDance(id) {
@@ -268,7 +289,7 @@ export class HUD {
 
   announce(text, by) {
     const a = this.els.announce;
-    $(a, '.text').textContent = text;
+    markKhmer($(a, '.text'), text).textContent = text;
     $(a, '.by').textContent = by ? `📣 ${by}` : 'DJ ANNOUNCEMENT';
     a.classList.remove('hidden');
     a.classList.remove('announce-in');

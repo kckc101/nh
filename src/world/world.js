@@ -18,6 +18,7 @@ import { FXDirector } from './fx.js';
 import { Crowd } from './crowd.js';
 import { Player } from './player.js';
 import { glowTexture, smokeTexture } from './textures.js';
+import { PerformanceGovernor, TIERS } from './perf.js';
 
 export class World extends Emitter {
   constructor(container, audio) {
@@ -26,8 +27,10 @@ export class World extends Emitter {
     this.audio = audio;
     this.q = qualityProfile();
 
+    this.gov = new PerformanceGovernor({ enabled: settings.autoPerf !== false });
+    this.particleScale = 1; // read by the FX director; cut when the governor sheds effects
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: this.q.antialias, powerPreference: 'high-performance' }));
-    r.setPixelRatio(this.q.pixelRatio);
+    r.setPixelRatio(this.pixelRatio);
     r.setSize(innerWidth, innerHeight);
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.05;
@@ -67,10 +70,29 @@ export class World extends Emitter {
 
     this.timer = new THREE.Timer();
     this.timer.connect(document);
-    this.frames = 0;
-    this.fpsTime = 0;
     this.fps = 60;
-    this.slowFor = 0;
+    this.gov.on('fps', (fps) => {
+      this.fps = Math.round(fps);
+      this.emit('fps', this.fps);
+    });
+    this.gov.on('change', () => this.applyPerf());
+    this.gov.on('degrade', (s) => this.emit('degrade', s));
+  }
+
+  /** Effective device-pixel ratio: quality ceiling × governor scale (never below 0.6). */
+  get pixelRatio() {
+    return Math.max(0.6, this.q.pixelRatio * (this.gov?.scale ?? 1));
+  }
+
+  /** Apply the governor's current scale and feature tier. */
+  applyPerf() {
+    const tier = TIERS[this.gov.tier];
+    const wantBloom = this.q.bloom && tier.bloom;
+    if (wantBloom !== !!this.composer) this.setupComposer();
+    this.particleScale = tier.particles;
+    this.crowd.lodScale = tier.lod;
+    this.resize();
+    this.emit('perf', this.gov.state);
   }
 
   setPlayer(profile, isDJ) {
@@ -84,7 +106,7 @@ export class World extends Emitter {
     this.composer?.dispose();
     this.composer = null;
     this.bloom = null;
-    if (!this.q.bloom) return;
+    if (!this.q.bloom || !TIERS[this.gov.tier].bloom) return;
     const c = (this.composer = new EffectComposer(this.renderer));
     c.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.4, 0.82);
@@ -96,23 +118,24 @@ export class World extends Emitter {
     settings.quality = level;
     saveSettings();
     this.q = qualityProfile(level);
-    this.renderer.setPixelRatio(this.q.pixelRatio);
-    this.setupComposer();
-    this.resize();
+    this.gov.reset(); // re-evaluates from the new ceiling (also re-applies via 'change')
+    this.applyPerf();
     this.emit('quality', level);
   }
 
   resize() {
     const w = innerWidth;
     const h = innerHeight;
+    const pr = this.pixelRatio;
+    if (this.renderer.getPixelRatio() !== pr) this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (this.composer) {
-      this.composer.setPixelRatio(this.q.pixelRatio);
+      this.composer.setPixelRatio(pr);
       this.composer.setSize(w, h);
     }
-    const scale = (h * this.q.pixelRatio) / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
+    const scale = (h * pr) / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
     this.sparks.setScale(scale);
     this.smoke.setScale(scale);
     this.env.setPointScale(scale);
@@ -153,24 +176,7 @@ export class World extends Emitter {
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
 
-    this.frames++;
-    this.fpsTime += dt;
-    if (this.fpsTime >= 0.5) {
-      this.fps = Math.round(this.frames / this.fpsTime);
-      this.frames = 0;
-      this.fpsTime = 0;
-      this.emit('fps', this.fps);
-      this.adapt();
-    }
-  }
-
-  /** Step quality down if the device can't keep up. */
-  adapt() {
-    if (document.hidden) return;
-    this.slowFor = this.fps < 28 ? this.slowFor + 0.5 : 0;
-    if (this.slowFor >= 5 && this.q.level !== 'low') {
-      this.slowFor = 0;
-      this.setQuality(this.q.level === 'high' ? 'medium' : 'low');
-    }
+    // Real wall-clock timing (dt above is clamped, which would hide slow frames).
+    this.gov.tick(performance.now(), document.hidden);
   }
 }

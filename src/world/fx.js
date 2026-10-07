@@ -91,7 +91,12 @@ export class FXDirector {
   }
 
   emitFor(duration, rate, fn) {
-    this.emitters.push({ until: this.time + duration, rate, acc: 0, fn });
+    this.emitters.push({ until: this.time + duration, rate: rate * this.w.particleScale, acc: 0, fn });
+  }
+
+  /** Particle count scaled by the performance budget. */
+  n(count) {
+    return Math.max(1, Math.round(count * this.w.particleScale));
   }
 
   nextPalette() {
@@ -130,7 +135,7 @@ export class FXDirector {
         break;
       case 'smoke': {
         const c = new THREE.Color(0.75, 0.62, 0.95);
-        for (let i = 0; i < 160; i++) {
+        for (let i = 0; i < this.n(160); i++) {
           smoke.emit(rand(-22, 22), rand(2.7, 3.5), rand(-26, -22), rand(-1.5, 1.5), rand(0, 0.3), rand(1.5, 4.5), {
             color: c, life: rand(6, 9), size: rand(5, 9), alpha: 0.2, drag: 0.35, grow: 1.3, kind: KIND.SMOKE,
           });
@@ -150,7 +155,7 @@ export class FXDirector {
         this.stormUntil = this.time + 10;
         break;
       case 'confetti':
-        this.w.confetti.burst(480, { x: 0, y: 20, z: 6, w: 64, h: 12, d: 46 }, NEON);
+        this.w.confetti.burst(this.n(480), { x: 0, y: 20, z: 6, w: 64, h: 12, d: 46 }, NEON);
         break;
       case 'fireworks':
         for (let i = 0; i < 6; i++) this.after(i * 0.45 + Math.random() * 0.2, () => this.firework());
@@ -180,7 +185,7 @@ export class FXDirector {
     this.after(0.85, () => {
       const col = new THREE.Color(NEON[Math.floor(Math.random() * NEON.length)]).multiplyScalar(2.6);
       const v = new THREE.Vector3();
-      for (let i = 0; i < 120; i++) {
+      for (let i = 0; i < this.n(120); i++) {
         v.randomDirection().multiplyScalar(rand(8, 13));
         sparks.emit(x, y, z, v.x, v.y, v.z, { color: col, life: rand(1.3, 2), size: rand(0.6, 0.9), alpha: 1, gravity: -5, drag: 0.9 });
       }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-export const KHMER_FONT = '"Koulen", "Kantumruy Pro", "Khmer UI", "Leelawadee UI", sans-serif';
-export const DISPLAY_FONT = '"Koulen", "Orbitron", "Impact", sans-serif';
+export const KHMER_FONT = '"Twemoji Country Flags", "Koulen", "Kantumruy Pro", "Khmer UI", "Leelawadee UI", sans-serif';
+export const DISPLAY_FONT = '"Twemoji Country Flags", "Koulen", "Kantumruy Pro", "Impact", sans-serif';
 
 export function canvasTexture(canvas) {
   const t = new THREE.CanvasTexture(canvas);
@@ -54,7 +54,7 @@ const emojiCache = new Map();
 export function emojiTexture(emoji) {
   if (emojiCache.has(emoji)) return emojiCache.get(emoji);
   const [c, ctx] = makeCanvas(128, 128);
-  ctx.font = '100px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+  ctx.font = '100px "Twemoji Country Flags", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(emoji, 64, 70);

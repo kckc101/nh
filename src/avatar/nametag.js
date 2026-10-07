@@ -35,7 +35,7 @@ export function makeNameTag(name, tag, isDJ, accent) {
   c.height = H;
   const ctx = c.getContext('2d');
   const label = name || 'Raver';
-  ctx.font = '700 46px "Chakra Petch", "Segoe UI", sans-serif';
+  ctx.font = '700 46px "Twemoji Country Flags", "Chakra Petch", "Kantumruy Pro", "Segoe UI", sans-serif';
   const nameW = Math.min(380, ctx.measureText(label).width);
   const badgeW = isDJ ? 78 : 0;
   const total = nameW + badgeW + 44;
@@ -60,13 +60,13 @@ export function makeNameTag(name, tag, isDJ, accent) {
     ctx.fillStyle = g;
     ctx.fill();
     ctx.fillStyle = '#10051c';
-    ctx.font = '800 30px "Chakra Petch", sans-serif';
+    ctx.font = '700 30px "Chakra Petch", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('DJ', x + 32, 43);
     x += badgeW;
   }
-  ctx.font = '700 46px "Chakra Petch", "Segoe UI", sans-serif';
+  ctx.font = '700 46px "Twemoji Country Flags", "Chakra Petch", "Kantumruy Pro", "Segoe UI", sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = accent;
@@ -75,7 +75,7 @@ export function makeNameTag(name, tag, isDJ, accent) {
   ctx.fillText(label, x, 44, 380);
 
   if (tag) {
-    ctx.font = '600 28px "Chakra Petch", "Segoe UI", sans-serif';
+    ctx.font = '600 28px "Twemoji Country Flags", "Chakra Petch", "Kantumruy Pro", "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = accent;
     ctx.shadowBlur = 8;
@@ -113,7 +113,7 @@ export function makeBubble(text, accent = '#00f0ff') {
   c.width = W;
   c.height = H;
   const ctx = c.getContext('2d');
-  ctx.font = '600 34px "Chakra Petch", "Kantumruy Pro", "Segoe UI", sans-serif';
+  ctx.font = '600 34px "Twemoji Country Flags", "Chakra Petch", "Kantumruy Pro", "Segoe UI", sans-serif';
   const lines = wrap(ctx, text, W - 80, 3);
   const lh = 40;
   const bh = lines.length * lh + 28;

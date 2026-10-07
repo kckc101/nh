@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Koulen", "Chakra Petch", Impact, sans-serif;
-  --font-ui: "Chakra Petch", "Kantumruy Pro", system-ui, sans-serif;
-  --font-khmer: "Kantumruy Pro", "Koulen", "Khmer UI", sans-serif;
+  /* "Twemoji Country Flags" only covers flag emoji (it's injected on Windows, which has
+     no flag glyphs), so it can safely lead every stack. Khmer comes from Kantumruy Pro /
+     Koulen (Google Fonts) with system Khmer fonts as a last resort. */
+  --font-display: "Twemoji Country Flags", "Koulen", "Chakra Petch", "Kantumruy Pro", Impact, sans-serif;
+  --font-ui: "Twemoji Country Flags", "Chakra Petch", "Kantumruy Pro", "Khmer UI", "Leelawadee UI", system-ui, sans-serif;
+  --font-khmer: "Twemoji Country Flags", "Kantumruy Pro", "Koulen", "Khmer UI", "Leelawadee UI", sans-serif;
   --color-night: #07040d;
   --color-ink: #120a22;
   --color-cyan: #00f0ff;
@@ -38,8 +41,20 @@ button {
 }
 
 input,
+select,
+button {
+  font-family: inherit;
+}
+
+input,
 select {
   font-size: 16px; /* prevents iOS focus zoom */
+}
+
+/* Khmer script needs more line height for its stacked vowels and subscripts. */
+:lang(km) {
+  font-family: var(--font-khmer);
+  line-height: 1.6;
 }
 
 ::selection {

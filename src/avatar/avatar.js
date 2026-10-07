@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildAvatarGeometry, avatarMaterial } from './builder.js';
+import { buildAvatarGeometry, buildImpostorGeometry, avatarMaterial } from './builder.js';
 import { computePose, walkPose, makePose, POSE_KEYS } from './dances.js';
 import { makeNameTag, makeBubble, disposeSprite } from './nametag.js';
 
@@ -52,12 +52,21 @@ export class Avatar {
     this.bubble = null;
     this.bubbleTimer = 0;
     this.hasTag = nameTag;
+    this.lod = 0;
+    this.impostor = null;
+    this.lodAcc = 0;
+    this.lodFrame = Math.floor(Math.random() * 3); // staggers reduced-rate updates across the crowd
     this.tagScale = tagScale;
 
     this.setConfig(config);
   }
 
   setConfig(config) {
+    if (this.impostor) {
+      this.impostor.removeFromParent();
+      this.impostor.geometry.dispose();
+      this.impostor = null;
+    }
     for (const m of this.meshes) {
       m.removeFromParent();
       m.geometry.dispose();
@@ -83,6 +92,41 @@ export class Avatar {
     this.stickR = add(g.stickR, this.armR);
     this.stickL.visible = this.stickR.visible = false;
     if (this.hasTag) this.setLabel(this.name, this.tag, this.isDJ);
+    if (this.lod === 2) {
+      this.lod = 0;
+      this.setLOD(2);
+    }
+  }
+
+  /** 0 = full rig, 1 = full rig animated at a reduced rate, 2 = single-mesh impostor. */
+  setLOD(level) {
+    if (level === this.lod) return;
+    if (level === 2 && !this.impostor) {
+      this.impostor = new THREE.Mesh(buildImpostorGeometry(this.config), avatarMaterial());
+      this.body.add(this.impostor);
+    }
+    this.hips.visible = level !== 2;
+    if (this.impostor) this.impostor.visible = level === 2;
+    this.lod = level;
+  }
+
+  /** LOD-aware per-frame update (the crowd decides the level from distance and GPU budget). */
+  tick(dt, M, level) {
+    this.setLOD(level);
+    if (level === 0) return this.update(dt, M);
+    if (level === 1) {
+      this.lodAcc += dt;
+      if (++this.lodFrame % 3 === 0) {
+        this.update(Math.min(this.lodAcc, 0.1), M);
+        this.lodAcc = 0;
+      }
+      return;
+    }
+    // Far away: just bob on the beat.
+    const dip = 1 - Math.abs(Math.sin(Math.PI * M.phase));
+    this.body.position.set(0, -0.06 * dip * AVATAR_SCALE, 0);
+    this.body.rotation.y = 0;
+    this.tickBubble(dt);
   }
 
   setLabel(name, tag, isDJ) {
@@ -163,7 +207,10 @@ export class Avatar {
 
     const spare = this.dance === 'glowstick' && !walking && this.config.hands !== 'sticks';
     this.stickL.visible = this.stickR.visible = spare;
+    this.tickBubble(dt);
+  }
 
+  tickBubble(dt) {
     if (this.bubble) {
       this.bubbleTimer -= dt;
       if (this.bubbleTimer <= 0) {
@@ -177,6 +224,7 @@ export class Avatar {
 
   dispose() {
     for (const m of this.meshes) m.geometry.dispose();
+    this.impostor?.geometry.dispose();
     disposeSprite(this.tagSprite);
     disposeSprite(this.bubble);
     this.root.removeFromParent();

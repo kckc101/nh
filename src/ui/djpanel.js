@@ -75,11 +75,23 @@ export class DJPanel {
               <button class="act rounded-xl px-3 glass flex items-center gap-1.5 text-sm font-semibold">${icon('megaphone', 'size-4')}Send</button></form>
             <div class="flex flex-wrap gap-1.5">${ANNOUNCE_PRESETS.map((p, i) => `<button class="chip rounded-full px-2.5 py-1 text-[11px]" data-ann="${i}">${esc(p)}</button>`).join('')}</div>`)}
           ${sec('LIVE MIC', `
-            <div class="flex items-center gap-3">
-              <button class="mic-btn act rounded-xl px-4 py-2.5 glass flex items-center gap-2 font-semibold text-sm">${icon('mic', 'size-4')}<span>Go live on mic</span></button>
-              <div class="flex-1 h-2 rounded-full bg-white/10 overflow-hidden"><div class="mic-meter h-full w-0 bg-gradient-to-r from-acid to-gold transition-[width] duration-75"></div></div>
+            <div class="mic-perm flex items-center gap-2 text-xs text-white/70" role="status">
+              <span class="dot size-2 rounded-full bg-white/30"></span><span class="label">Checking microphone access…</span>
             </div>
-            <p class="text-[11px] text-white/45">Your voice streams to every raver (WebRTC) and the music ducks while you talk.</p>`)}
+            <div class="flex gap-2">
+              <button class="mic-test act glass rounded-xl px-3 py-2.5 flex items-center gap-2 text-sm font-semibold">${icon('headphones', 'size-4')}<span>Test mic</span></button>
+              <button class="mic-btn act glass rounded-xl px-3 py-2.5 flex-1 flex items-center justify-center gap-2 text-sm font-semibold">${icon('mic', 'size-4')}<span>Go live on mic</span></button>
+            </div>
+            <select class="mic-device hidden field w-full text-sm text-white bg-ink" aria-label="Microphone input"></select>
+            <div class="flex items-center gap-2">
+              <div class="relative flex-1 h-2.5 rounded-full bg-white/10 overflow-hidden" role="meter" aria-label="Microphone level" aria-valuemin="-60" aria-valuemax="0">
+                <div class="mic-meter absolute inset-y-0 left-0 w-0 rounded-full"></div>
+                <div class="mic-peak absolute inset-y-0 w-0.5 bg-white/80 hidden"></div>
+              </div>
+              <span class="mic-db w-16 text-right font-mono text-[11px] text-white/55">off</span>
+            </div>
+            <p class="mic-msg hidden text-xs leading-snug text-[#ff7a9a]" role="alert"></p>
+            <p class="text-[11px] text-white/45">"Test mic" checks your input locally. "Go live" streams your voice to every raver (WebRTC) and ducks the music.</p>`)}
           ${sec('QUEUE', '<ol class="queue space-y-1.5"></ol>')}
           ${sec('ADD TRACK', `
             <div class="flex gap-1.5 text-xs font-semibold">
@@ -224,31 +236,159 @@ export class DJPanel {
       if (act === 'remove') this.net.dj('remove', uid);
     });
 
+    this.bindMic();
+  }
+
+  // ---------------------------------------------------------------- live mic
+
+  bindMic() {
+    const n = this.node;
     const micBtn = $(n, '.mic-btn');
-    micBtn.addEventListener('click', async () => {
+    const testBtn = $(n, '.mic-test');
+    const deviceSel = $(n, '.mic-device');
+    const msg = $(n, '.mic-msg');
+    const showError = (text) => {
+      msg.textContent = text || '';
+      msg.classList.toggle('hidden', !text);
+    };
+    const run = async (fn) => {
+      showError('');
       try {
-        if (this.mic.live) this.mic.stop();
-        else await this.mic.start();
+        await fn();
       } catch (err) {
-        toast(err.message || 'Microphone unavailable', 'error', 4500);
+        showError(err.message);
       }
+    };
+    micBtn.addEventListener('click', () => run(() => (this.mic.live ? this.mic.stop() : this.mic.start())));
+    testBtn.addEventListener('click', () => run(() => (this.mic.stream ? this.mic.stop() : this.mic.test())));
+    deviceSel.addEventListener('change', () => run(() => this.mic.setDevice(deviceSel.value)));
+    this.mic.on('error', (text) => showError(text));
+    this.mic.on('permission', () => this.renderMic());
+    this.mic.on('change', () => {
+      this.renderMic();
+      this.setupMeter(this.mic.stream);
+      this.fillDevices();
     });
-    this.mic.on('change', (live) => {
-      micBtn.innerHTML = `${icon(live ? 'mic-off' : 'mic', 'size-4')}<span>${live ? 'End mic' : 'Go live on mic'}</span>`;
-      micBtn.style.boxShadow = live ? '0 0 20px #9dff00' : '';
-      renderIcons(micBtn);
-      this.setupMeter(live ? this.mic.stream : null);
+    this.net.on('status', () => this.renderMic());
+    this.mic.checkPermission().then(() => {
+      this.renderMic();
+      this.fillDevices();
     });
   }
 
+  async fillDevices() {
+    const sel = $(this.node, '.mic-device');
+    if (this.mic.permission !== 'granted') return sel.classList.add('hidden');
+    const devices = await this.mic.devices();
+    if (devices.length < 2) return sel.classList.add('hidden');
+    sel.innerHTML = devices.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || `Microphone ${i + 1}`)}</option>`).join('');
+    const current = this.mic.stream?.getAudioTracks()[0]?.getSettings().deviceId;
+    if (current) sel.value = current;
+    sel.classList.remove('hidden');
+  }
+
+  renderMic() {
+    const n = this.node;
+    const { live, testing, permission } = this.mic.status;
+    const PERM = {
+      granted: ['bg-acid', 'Microphone allowed'],
+      prompt: ['bg-gold', 'Your browser will ask for microphone access'],
+      denied: ['bg-[#ff2d55]', 'Microphone blocked: allow it in this site\'s settings'],
+      insecure: ['bg-[#ff2d55]', 'Microphone needs HTTPS or localhost'],
+      unsupported: ['bg-[#ff2d55]', 'This browser can\'t capture audio'],
+      unknown: ['bg-white/30', 'Microphone access will be requested when you start'],
+    };
+    const [dot, label] = PERM[permission] || PERM.unknown;
+    $(n, '.mic-perm .dot').className = `dot size-2 rounded-full ${dot}`;
+    $(n, '.mic-perm .label').textContent = label;
+    const blocked = permission === 'insecure' || permission === 'unsupported';
+    const micBtn = $(n, '.mic-btn');
+    micBtn.innerHTML = `${icon(live ? 'mic-off' : 'mic', 'size-4')}<span>${live ? 'End live mic' : this.net.online ? 'Go live on mic' : 'Go live (needs server)'}</span>`;
+    micBtn.style.boxShadow = live ? '0 0 20px #9dff00' : '';
+    micBtn.disabled = blocked || (!live && !this.net.online);
+    micBtn.classList.toggle('opacity-40', micBtn.disabled);
+    const testBtn = $(n, '.mic-test');
+    testBtn.innerHTML = `${icon('headphones', 'size-4')}<span>${testing ? 'Stop test' : 'Test mic'}</span>`;
+    testBtn.disabled = blocked || live;
+    testBtn.classList.toggle('opacity-40', testBtn.disabled);
+    renderIcons(micBtn);
+    renderIcons(testBtn);
+  }
+
+  /**
+   * Level meter for the captured mic. Primary: an AnalyserNode on the stream. Fallback when
+   * Web Audio can't run it (context suspended / unavailable): the encoder's audioLevel from
+   * WebRTC stats while live, else an "on, level unknown" indicator.
+   */
   setupMeter(stream) {
+    try {
+      this.meter?.src?.disconnect();
+    } catch {
+      /* gone */
+    }
     this.meter = null;
-    if (!stream || !this.audio.ctx) return;
-    const src = this.audio.ctx.createMediaStreamSource(stream);
-    const an = this.audio.ctx.createAnalyser();
-    an.fftSize = 256;
-    src.connect(an);
-    this.meter = { an, data: new Uint8Array(an.fftSize) };
+    if (!stream) return;
+    const ctx = this.audio.ctx;
+    try {
+      if (!ctx) throw new Error('no audio context');
+      if (ctx.state !== 'running') ctx.resume();
+      const src = ctx.createMediaStreamSource(stream);
+      const an = ctx.createAnalyser();
+      an.fftSize = 1024;
+      const sink = ctx.createGain();
+      sink.gain.value = 0; // keeps the analyser pulling without making the mic audible locally
+      src.connect(an).connect(sink).connect(ctx.destination);
+      this.meter = { mode: 'analyser', ctx, src, an, data: new Float32Array(an.fftSize), peak: -60, level: -60 };
+    } catch {
+      this.meter = { mode: 'stats', peak: -60, level: -60, polling: false };
+    }
+  }
+
+  meterTick() {
+    const m = this.meter;
+    const fill = $(this.node, '.mic-meter');
+    const peakEl = $(this.node, '.mic-peak');
+    const dbEl = $(this.node, '.mic-db');
+    if (!m) {
+      fill.style.width = '0';
+      peakEl.classList.add('hidden');
+      dbEl.textContent = 'off';
+      return;
+    }
+    let db = null;
+    if (m.mode === 'analyser' && m.ctx.state === 'running') {
+      m.an.getFloatTimeDomainData(m.data);
+      let sum = 0;
+      for (const v of m.data) sum += v * v;
+      db = 20 * Math.log10(Math.sqrt(sum / m.data.length) + 1e-6);
+    } else {
+      // Fallback: poll WebRTC stats (they only exist while broadcasting).
+      if (!m.polling) {
+        m.polling = true;
+        this.mic.statsLevel().then((lvl) => {
+          m.stats = lvl;
+          setTimeout(() => (m.polling = false), 200);
+        });
+      }
+      if (typeof m.stats === 'number') db = 20 * Math.log10(m.stats + 1e-6);
+    }
+    if (db === null) {
+      // Level unknown: show that the mic is open with a gentle pulse.
+      fill.style.width = `${30 + 20 * Math.sin(performance.now() / 300)}%`;
+      fill.style.background = 'rgba(255,255,255,0.25)';
+      peakEl.classList.add('hidden');
+      dbEl.textContent = 'on';
+      return;
+    }
+    db = Math.max(-60, Math.min(0, db));
+    m.level = db > m.level ? db : m.level - 1.2; // fast attack, slow release
+    m.peak = db > m.peak ? db : Math.max(-60, m.peak - 0.25);
+    const pct = (v) => `${((v + 60) / 60) * 100}%`;
+    fill.style.width = pct(m.level);
+    fill.style.background = m.peak > -3 ? '#ff2d55' : m.peak > -12 ? 'linear-gradient(90deg,#9dff00,#ffc400)' : '#9dff00';
+    peakEl.style.left = pct(m.peak);
+    peakEl.classList.remove('hidden');
+    dbEl.textContent = `${Math.round(m.level)} dB`;
   }
 
   render(state) {
@@ -283,13 +423,9 @@ export class DJPanel {
     if (this.open) {
       $(this.node, '.np-time').textContent = fmt(this.audio.position);
       const st = this.audio.beat.state;
-      $(this.node, '.detected').textContent = st.analysed ? `detected ${Math.round(st.bpm)} BPM` : 'BPM clock';
-      if (this.meter) {
-        this.meter.an.getByteTimeDomainData(this.meter.data);
-        let peak = 0;
-        for (const v of this.meter.data) peak = Math.max(peak, Math.abs(v - 128));
-        $(this.node, '.mic-meter').style.width = `${Math.min(100, (peak / 128) * 160)}%`;
-      }
+      const how = { detected: `detected live, ${Math.round(st.confidence * 100)}% sure`, track: 'track tempo, locking on...', manual: 'manual clock' }[st.bpmSource];
+      $(this.node, '.detected').textContent = `${Math.round(st.bpm)} BPM · ${how}`;
+      this.meterTick();
     }
     requestAnimationFrame(() => this.tick());
   }

@@ -45,8 +45,33 @@ Pick one:
 ## Audio
 
 - **Built-in tracks** (`src/audio/synth.js`) are procedural Khmer-pentatonic rave tunes with a "roneat" mallet lead, rendered deterministically from a seed. Every client plays the same arrangement in sync with the server clock.
-- **Beat detection** (`src/audio/beat.js`) uses an adaptive threshold on the 35–120 Hz band of an `AnalyserNode` and feeds a phase-locked beat clock for the dances.
+- **Live analysis** (`src/audio/beat.js`, `src/audio/onset-worklet.js`):
+  - Peak/RMS levels and kick detection come from an `AnalyserNode`.
+  - Tempo is detected live by autocorrelating an onset envelope. The envelope is computed on the audio thread by an AudioWorklet, so it's accurate even at low frame rates; it falls back to per-frame spectral flux without HTTPS.
+  - The detected tempo replaces fixed BPM values and drives a phase-locked beat clock for the dances.
 - **YouTube/SoundCloud** iframes and streams without CORS can't be analysed, so the lights follow the DJ-set BPM instead.
+
+## Performance on weak hardware
+
+`src/world/perf.js` measures real frame time and keeps phones and integrated GPUs smooth:
+
+- **Dynamic resolution.** The render scale drops while FPS is under 50 and climbs back when there's headroom.
+- **Effect fallback.** Sustained FPS under 30 first turns off bloom/post-processing, then cuts heavy particles to 35% and shortens LOD ranges.
+- **Recovery.** Effects come back after long smooth stretches; each recovery doubles the wait so it doesn't flap.
+- **Avatar LOD.** Near avatars get the full rig. Mid-range avatars animate at a third of the rate. Far avatars become single-mesh stand-ins, and off-screen ones skip animation entirely.
+
+The HUD stats line shows the FPS, the current resolution and the current effect tier. Settings has an "Auto performance" toggle.
+
+## Mic and volume
+
+- **Volume.** Music and the DJ's live mic both pass through one MasterGain node, so volume and mute control everything. YouTube/SoundCloud players follow the same volume through their own player APIs.
+- **Live mic.** The DJ panel shows the microphone permission state and offers "Test mic" (works offline) and an input-device picker. It shows plain-language errors for blocked, missing or busy microphones and has a dB meter. If Web Audio can't run, the meter falls back to WebRTC stats.
+
+## Fonts
+
+Khmer text uses Kantumruy Pro and Koulen from Google Fonts. The Khmer subsets are preloaded before any canvas draws them.
+
+Windows has no flag-emoji glyphs, so `country-flag-emoji-polyfill` loads a flags-only font there. It's self-hosted as `public/TwemojiCountryFlags.woff2`; Twemoji graphics are by Twitter and licensed CC-BY 4.0.
 
 ## Layout
 

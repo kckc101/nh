@@ -6,6 +6,14 @@ export function el(html) {
 }
 
 export const $ = (root, sel) => root.querySelector(sel);
+
+const KHMER = /[\u1780-\u17FF\u19E0-\u19FF]/;
+/** Tag elements containing Khmer script with lang="km" so they get the Khmer font + spacing. */
+export function markKhmer(node, text) {
+  if (KHMER.test(text)) node.setAttribute('lang', 'km');
+  else node.removeAttribute('lang');
+  return node;
+}
 export const $$ = (root, sel) => [...root.querySelectorAll(sel)];
 
 /** Escape untrusted text before it goes anywhere near innerHTML. */

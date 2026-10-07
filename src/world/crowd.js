@@ -106,6 +106,10 @@ export class Crowd {
     this.chatTimer = 4;
     this.onBotChat = null; // (avatar, text)
     this.onReaction = null; // (type, source)
+    this.lodScale = 1; // shrunk by the performance governor on weak GPUs
+    this.frustum = new THREE.Frustum();
+    this.viewProj = new THREE.Matrix4();
+    this.sphere = new THREE.Sphere(new THREE.Vector3(), 1.6);
 
     this.resident = new Avatar(RESIDENT, { name: 'DJ ANGKOR', tag: 'resident selector', isDJ: true });
     this.resident.root.position.copy(STAGE.dj);
@@ -257,7 +261,18 @@ export class Crowd {
 
   // ---------------------------------------------------------------- frame
 
+  /** Pick an LOD level, or -1 when the avatar is off-screen and needs no animation. */
+  lodFor(pos, dist, reach = 1) {
+    this.sphere.center.set(pos.x, pos.y + 1, pos.z);
+    if (!this.frustum.intersectsSphere(this.sphere)) return -1;
+    const near = 30 * this.lodScale * reach;
+    const mid = 65 * this.lodScale * reach;
+    return dist < near ? 0 : dist < mid ? 1 : 2;
+  }
+
   update(dt, t, M, camPos) {
+    const cam = this.world.camera;
+    this.frustum.setFromProjectionMatrix(this.viewProj.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     for (const b of this.bots) {
       const av = b.av;
       const pos = av.root.position;
@@ -289,8 +304,9 @@ export class Crowd {
       if (b.faceYaw !== undefined) av.root.rotation.y = lerpAngle(av.root.rotation.y, b.faceYaw, 1 - Math.exp(-dt * 6));
       av.setMotion(b.walking ? b.speed : 0);
       const dist = camPos.distanceTo(pos);
-      av.setTagOpacity(Math.max(0, Math.min(1, (26 - dist) / 8)));
-      if (dist < 140) av.update(dt, M);
+      av.setTagOpacity(Math.max(0, Math.min(1, (26 * this.lodScale - dist) / 8)));
+      const lod = this.lodFor(pos, dist);
+      if (lod >= 0) av.tick(dt, M, lod);
     }
 
     for (const r of this.remotes.values()) {
@@ -301,8 +317,10 @@ export class Crowd {
       r.av.root.rotation.y = lerpAngle(r.av.root.rotation.y, r.ry, 1 - Math.exp(-dt * 10));
       const speed = Math.hypot(pos.x - bx, pos.z - bz) / Math.max(dt, 1e-3);
       r.av.setMotion(r.moving ? Math.max(2.5, speed) : 0, speed > 6, pos.y > r.target.y + 0.2);
-      r.av.setTagOpacity(Math.max(0, Math.min(1, (60 - camPos.distanceTo(pos)) / 10)));
-      r.av.update(dt, M);
+      const dist = camPos.distanceTo(pos);
+      r.av.setTagOpacity(Math.max(0, Math.min(1, (60 - dist) / 10)));
+      const lod = this.lodFor(pos, dist, 1.4);
+      if (lod >= 0) r.av.tick(dt, M, lod);
     }
 
     if (this.resident.root.visible) {

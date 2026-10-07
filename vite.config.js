@@ -18,6 +18,9 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    // Keep the AudioWorklet module a real file: audioWorklet.addModule() with a data: URL
+    // isn't reliable across browsers.
+    assetsInlineLimit: (file) => (file.endsWith('-worklet.js') ? false : undefined),
     chunkSizeWarningLimit: 1500,
   },
 });

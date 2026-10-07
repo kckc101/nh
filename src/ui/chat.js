@@ -1,7 +1,7 @@
 // Stream-style chat: transparent message log bottom-left (TikTok-live style on phones),
 // composer with quick-chat hype buttons.
 
-import { el, esc } from './dom.js';
+import { el, esc, markKhmer } from './dom.js';
 import { icon, renderIcons } from './icons.js';
 import { accentColor } from '../avatar/options.js';
 
@@ -87,6 +87,7 @@ export class Chat {
       const bot = msg.bot ? 'opacity-90' : '';
       row.innerHTML = `<span class="inline-block rounded-lg px-2 py-1 bg-black/40 backdrop-blur-sm ${bot}">${badge}<b style="color:${color}">${esc(msg.name)}</b> <span class="text-white/90">${esc(msg.text)}</span></span>`;
     }
+    markKhmer(row, msg.text);
     this.log.append(row);
     while (this.log.children.length > 40) this.log.firstElementChild.remove();
     this.log.scrollTop = this.log.scrollHeight;

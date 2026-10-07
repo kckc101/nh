@@ -3,8 +3,13 @@
 // The DJ state from the server says *what* plays and *since when*; every client
 // seeks itself to the same position.
 //
-//   sources → input ─┬─→ analyser (visuals / beat detection, pre-volume)
-//                    └─→ lowpass ("outside the venue") → duck (mic) → limiter → master → out
+//   music sources → input ─┬─→ analyser (beat/tempo/peaks, pre-volume so lights work muted)
+//                          └─→ lowpass ("outside the venue") → duck → limiter ─┐
+//   DJ live mic (WebRTC) ──────────────────────────────────────→ micGain ──────┤
+//                                                              MasterGain ←─────┘ → destination
+//   Every audible WebAudio path ends in the single MasterGain, so the volume slider and
+//   mute control all of it. Embeds (YouTube/SoundCloud iframes) and no-CORS streams can't
+//   enter the graph; they get the same volume through their own player APIs.
 
 import { Emitter } from '../core/events.js';
 import { load, save } from '../core/store.js';
@@ -96,7 +101,7 @@ class ElementSource {
     } else {
       this.node = null;
       this.analysable = false;
-      el.volume = this.engine.outputLevel;
+      el.volume = this.engine.outputLevel ** 2;
     }
   }
 
@@ -159,7 +164,7 @@ class ElementSource {
   }
 
   setElementVolume(v) {
-    if (!this.analysable && this.el) this.el.volume = v;
+    if (!this.analysable && this.el) this.el.volume = v * v; // same curve as the master gain
   }
 
   get position() {
@@ -239,16 +244,21 @@ export class AudioEngine extends Emitter {
     limiter.ratio.value = 8;
     limiter.attack.value = 0.003;
     limiter.release.value = 0.2;
-    this.master = ctx.createGain();
+    this.master = ctx.createGain(); // MasterGain: the only node connected to the speakers
     this.master.gain.value = this.gainFor(this.outputLevel);
+    this.micGain = ctx.createGain();
+    this.micSource = null;
 
     // Analyser hangs off the input so lights keep reacting when the user mutes.
     this.input.connect(this.analyser);
     const sink = ctx.createGain();
     sink.gain.value = 0;
     this.analyser.connect(sink).connect(ctx.destination);
-    this.input.connect(this.filter).connect(this.duckGain).connect(limiter).connect(this.master).connect(ctx.destination);
+    this.input.connect(this.filter).connect(this.duckGain).connect(limiter).connect(this.master);
+    this.micGain.connect(this.master);
+    this.master.connect(ctx.destination);
     this.beat.attach(this.analyser, ctx.sampleRate);
+    this.setupOnsetWorklet(ctx);
 
     // Context resumed after being suspended → re-seek everything to the shared clock.
     ctx.onstatechange = () => ctx.state === 'running' && this.state && this.sync(this.state);
@@ -263,6 +273,26 @@ export class AudioEngine extends Emitter {
 
     if (this.state) this.sync(this.state);
     return ctx.resume().catch(() => {});
+  }
+
+  /**
+   * Sample-accurate onset detection on the audio thread, feeding the tempo tracker.
+   * AudioWorklet needs a secure context (HTTPS/localhost); elsewhere the beat detector
+   * keeps using frame-based spectral flux.
+   */
+  async setupOnsetWorklet(ctx) {
+    if (!ctx.audioWorklet) return;
+    try {
+      await ctx.audioWorklet.addModule(new URL('./onset-worklet.js', import.meta.url));
+      const node = new AudioWorkletNode(ctx, 'onset-detector', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      node.port.onmessage = (e) => this.beat.pushOnsets(e.data);
+      const sink = ctx.createGain();
+      sink.gain.value = 0;
+      this.input.connect(node).connect(sink).connect(ctx.destination);
+      this.onsetNode = node;
+    } catch (err) {
+      console.warn('[audio] onset worklet unavailable, using frame-based analysis', err);
+    }
   }
 
   /** Run fn when the audio clock reaches ctxTime (for visuals locked to scheduled audio). */
@@ -287,9 +317,10 @@ export class AudioEngine extends Emitter {
       this.track = track;
       this.source = this.createSource(track);
       this.section = null;
+      this.beat.resetTempo(track.bpm || 0);
       this.emit('track', track);
     }
-    this.beat.setTempo(track.bpm || 0, state.bpm);
+    this.beat.setFallback(state.bpm);
     const pos = state.playing ? Math.max(0, (this.serverNow() - state.startedAt) / 1000) : state.pausedPos;
     if (state.playing) this.source.play(pos);
     else this.source.pause();
@@ -340,7 +371,8 @@ export class AudioEngine extends Emitter {
     const v = this.outputLevel;
     if (this.master) this.master.gain.setTargetAtTime(this.gainFor(v), this.ctx.currentTime, 0.04);
     this.source?.setElementVolume?.(v);
-    if (this.micEl) this.micEl.volume = v;
+    this.embed.setVolume(v);
+    if (this.micEl && !this.micEl.muted) this.micEl.volume = v; // only when the mic bypasses WebAudio
     this.emit('volume', this.volume, this.muted);
   }
 
@@ -358,17 +390,38 @@ export class AudioEngine extends Emitter {
     if (this.ctx) this.duckGain.gain.setTargetAtTime(on ? 0.3 : 1, this.ctx.currentTime, 0.15);
   }
 
+  /** Play the DJ's live mic through micGain → MasterGain (ducking the music meanwhile). */
   playMic(stream) {
+    this.stopMic();
+    // Chrome only pulls audio from a remote WebRTC stream while a media element plays it,
+    // so a muted element stays attached; the audible path runs through the master gain.
     if (!this.micEl) this.micEl = new Audio();
     this.micEl.autoplay = true;
+    this.micEl.muted = true;
     this.micEl.srcObject = stream;
-    this.micEl.volume = this.outputLevel;
     this.micEl.play().catch(() => {});
+    try {
+      this.micSource = this.ctx.createMediaStreamSource(stream);
+      this.micSource.connect(this.micGain);
+    } catch {
+      // Fallback: let the element play it, mirroring the master volume.
+      this.micEl.muted = false;
+      this.micEl.volume = this.outputLevel;
+    }
     this.setDuck(true);
   }
 
   stopMic() {
-    if (this.micEl) this.micEl.srcObject = null;
+    try {
+      this.micSource?.disconnect();
+    } catch {
+      /* already gone */
+    }
+    this.micSource = null;
+    if (this.micEl) {
+      this.micEl.srcObject = null;
+      this.micEl.muted = true;
+    }
     this.setDuck(false);
   }
 
