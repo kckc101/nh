@@ -26,6 +26,7 @@ npm run build                     # → dist/
 
 Pick one:
 
+- **GitHub Pages:** `.github/workflows/deploy.yml` builds and publishes on every push to `main`. Set Pages' source to "GitHub Actions". The site runs the offline demo unless the repository variable `VITE_SERVER_URL` points at a hosted server.
 - **Same origin:** let the server host the build: `STATIC_DIR=../nh/dist npm start` in the hh repo.
 - **Separate hosts** (e.g. GitHub Pages / Netlify + Render): build with `VITE_SERVER_URL=https://your-server.example npm run build`. The build uses relative asset paths, so it also works from a sub-path.
 
