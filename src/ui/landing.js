@@ -19,14 +19,14 @@ function prangPoints(cx, by, w, h, tiers = 6) {
 }
 
 function angkorPath() {
+  // Three towers, as on the Cambodian flag: tall centre on the upper gallery,
+  // two flanking towers on the terrace.
   const towers = [
-    [170, 215, 48, 100],
-    [290, 185, 56, 128],
-    [400, 185, 76, 178],
-    [510, 185, 56, 128],
-    [630, 215, 48, 100],
+    [400, 185, 82, 182],
+    [215, 215, 64, 140],
+    [585, 215, 64, 140],
   ];
-  let d = 'M20 250 H780 M100 250 V215 H700 V250 M220 215 V185 H580 V215';
+  let d = 'M20 250 H780 M130 250 V215 H670 V250 M270 215 V185 H530 V215';
   for (const [cx, by, w, h] of towers) {
     d += ' M' + prangPoints(cx, by, w, h).map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L');
   }

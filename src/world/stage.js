@@ -225,25 +225,29 @@ export class Stage {
       [0.39, 0.33], [0.32, 0.39], [0.34, 0.45], [0.27, 0.51], [0.28, 0.57], [0.21, 0.63], [0.21, 0.69],
       [0.14, 0.75], [0.13, 0.82], [0.07, 0.9], [0.035, 0.96], [0, 1],
     ].map(([r, h]) => new THREE.Vector2(r, h));
+    // Angkor Wat's front silhouette (as on the Cambodian flag): a tall central prang
+    // flanked by two shorter ones, rising from a stepped terrace.
     const towers = [
-      [0, 6.2, 11, -39.6],
-      [-8.6, 4.6, 8, -39.3],
-      [8.6, 4.6, 8, -39.3],
-      [-16, 3.6, 6, -39],
-      [16, 3.6, 6, -39],
+      // x, width, height, base y, z
+      [0, 6.6, 12, 20.1, -39.6],
+      [-11, 5, 9, 19.1, -39.3],
+      [11, 5, 9, 19.1, -39.3],
     ];
     const solids = [];
     const edges = [];
-    for (const [x, w, h, z] of towers) {
+    for (const [x, w, h, y, z] of towers) {
       const g = new THREE.LatheGeometry(profile, 8);
       g.scale(w, h, w);
-      g.translate(x, 19.1, z);
+      g.translate(x, y, z);
       solids.push(g);
       edges.push(new THREE.EdgesGeometry(g, 20));
     }
-    const gallery = new THREE.BoxGeometry(38, 1.2, 2.6).translate(0, 18.5, -39.2);
-    solids.push(gallery.toNonIndexed());
-    edges.push(new THREE.EdgesGeometry(gallery));
+    const terrace = new THREE.BoxGeometry(34, 1.2, 2.8).translate(0, 18.5, -39.3);
+    const gallery = new THREE.BoxGeometry(20, 1, 2.4).translate(0, 19.6, -39.5);
+    for (const g of [terrace, gallery]) {
+      solids.push(g.toNonIndexed());
+      edges.push(new THREE.EdgesGeometry(g));
+    }
     // LatheGeometry is non-indexed-compatible only after conversion; normalise all to non-indexed.
     const merged = mergeGeometries(solids.map((g) => (g.index ? g.toNonIndexed() : g)));
     this.add(merged, this.stone);

@@ -40,14 +40,13 @@ float prang(vec2 p, float cx, float w, float h, float base) {
 }
 
 float angkor(vec2 p) {
+  // Three towers: tall centre on the upper gallery, two flanking towers on the terrace.
   float base = 0.2;
-  float s = step(p.y, base) * step(abs(p.x - 0.5), 0.46);
-  s = max(s, step(p.y, base + 0.05) * step(abs(p.x - 0.5), 0.36));
-  s = max(s, prang(p, 0.5, 0.075, 0.55, base + 0.05));
-  s = max(s, prang(p, 0.37, 0.058, 0.4, base + 0.05));
-  s = max(s, prang(p, 0.63, 0.058, 0.4, base + 0.05));
-  s = max(s, prang(p, 0.26, 0.05, 0.3, base));
-  s = max(s, prang(p, 0.74, 0.05, 0.3, base));
+  float s = step(p.y, base) * step(abs(p.x - 0.5), 0.42);
+  s = max(s, step(p.y, base + 0.05) * step(abs(p.x - 0.5), 0.22));
+  s = max(s, prang(p, 0.5, 0.08, 0.58, base + 0.05));
+  s = max(s, prang(p, 0.31, 0.065, 0.44, base));
+  s = max(s, prang(p, 0.69, 0.065, 0.44, base));
   return s;
 }
 
