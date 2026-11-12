@@ -11,6 +11,11 @@
 //   offline    the server can't be reached to check a ticket
 //   dj         ?dj=true: the host's entrance (the DJ password is checked on the next screen)
 //
+// No ticket server at all (a static host such as GitHub Pages, where /api is a 404 page): the
+// entrance offers ENTER THE OFFLINE DEMO (a simulated crowd and a local DJ, nothing networked).
+// That opens nothing a server guards: if a server does turn out to be there, it still turns away
+// anyone without a ticket when they join.
+//
 // The browser only shows what the server says: it verifies every ticket, and the multiplayer
 // server checks it again when you join (no ticket, no entry), so editing this page or its storage
 // doesn't get anyone in.
@@ -113,6 +118,10 @@ const VIEW_HTML = `
       <button type="button" class="redeem rounded-xl px-4 font-display text-lg tracking-wider border border-cyan/60 text-cyan hover:bg-cyan/10 disabled:opacity-40">ENTER</button>
     </div>
     <p class="err hidden text-sm text-[#ff6b8a]" role="alert"></p>
+    <button type="button" class="demo-entry hidden w-full rounded-xl px-4 py-3 border border-[#00f0ff]/40 bg-[#00f0ff]/5 hover:bg-[#00f0ff]/10 text-left flex items-center justify-between gap-3">
+      <span><span class="block text-sm font-semibold">No ticket server here</span><span class="block text-xs text-white/55">Try the offline demo: a simulated crowd and a local DJ</span></span>
+      <span class="shrink-0 font-display text-lg tracking-wider text-cyan flex items-center gap-1.5">${icon('play', 'size-4')}DEMO</span>
+    </button>
     <a href="${TICKETS_PAGE}" class="buy-link rounded-xl px-4 py-3 border border-white/10 bg-white/[.03] hover:bg-white/10 flex items-center justify-between gap-3">
       <span><span class="block text-sm font-semibold">No ticket yet?</span><span class="block text-xs text-white/55">General admission $5 · VIP $20 · pay with KHQR</span></span>
       <span class="shrink-0 font-display text-lg tracking-wider text-magenta flex items-center gap-1.5">${icon('ticket', 'size-5')}BUY TICKETS</span>
@@ -141,6 +150,10 @@ const VIEW_HTML = `
     <h2 class="font-display text-2xl">THE TICKET DESK IS OFFLINE</h2>
     <p class="text-sm text-white/60 max-w-[32ch]">Tickets are checked by the E-Rave server, which can't be reached right now.</p>
     <button type="button" class="retry btn-rave rounded-xl px-6 py-3 font-display text-xl tracking-wider text-white">TRY AGAIN</button>
+    <button type="button" class="demo-entry hidden w-full rounded-xl px-4 py-3 border border-[#00f0ff]/40 bg-[#00f0ff]/5 hover:bg-[#00f0ff]/10 text-left flex items-center justify-between gap-3">
+      <span><span class="block text-sm font-semibold">No ticket server here</span><span class="block text-xs text-white/55">Try the offline demo: a simulated crowd and a local DJ</span></span>
+      <span class="shrink-0 font-display text-lg tracking-wider text-cyan flex items-center gap-1.5">${icon('play', 'size-4')}DEMO</span>
+    </button>
   </section>
 
   <section data-view="dj" class="hidden flex flex-col items-center gap-4 py-6 text-center">
@@ -185,6 +198,8 @@ class Gate {
           </div></div>
           <p class="hero-extra rise font-khmer text-gold neon-soft text-[clamp(16px,2.4vw,24px)] mt-1" style="animation-delay:.4s" lang="km">តន្ត្រី • រាំ • សប្បាយ</p>
           <button type="button" class="open-card cta rise btn-rave mt-6 w-full max-w-xs rounded-xl px-5 py-2.5 font-display text-[clamp(15px,4vw,19px)] tracking-wider text-white flex items-center justify-center gap-2.5 whitespace-nowrap" style="animation-delay:.5s">${icon('scan-qr-code', 'size-5')}SCAN YOUR TICKET TO ENTER</button>
+          <button type="button" class="demo-hero demo-go hidden mt-3 w-full max-w-xs rounded-xl px-5 py-2 font-display text-[clamp(14px,3.6vw,17px)] tracking-wider text-cyan border border-[#00f0ff]/50 hover:bg-[#00f0ff]/10 flex items-center justify-center gap-2 whitespace-nowrap">${icon('play', 'size-4')}ENTER THE OFFLINE DEMO</button>
+          <p class="demo-hero hidden mt-2 text-[11px] text-white/45 max-w-xs">No ticket server on this site: try it with a simulated crowd and a local DJ.</p>
           <div class="gate-lock hero-extra rise mt-4 inline-flex items-center gap-2 rounded-full border border-[#ff2d55]/60 bg-[#ff2d55]/10 px-4 py-1.5 text-[11px] font-bold tracking-[.2em] text-[#ff6b8a]" style="animation-delay:.55s">
             ${icon('lock', 'size-3.5')}<span>ACCESS RESTRICTED · TICKET REQUIRED</span>
           </div>
@@ -216,6 +231,7 @@ class Gate {
       this.show('enter');
     });
     on('.retry', () => this.start());
+    on('.demo-entry, .demo-go', () => this.enterDemo());
     on('.redeem', () => this.check(this.q('.f-code').value));
     on('.scan-cam', () => this.startCamera());
     on('.cam-stop', () => this.stopCamera());
@@ -244,6 +260,8 @@ class Gate {
       setTimeout(() => toast(msg, 'error', 6500), 400);
     }
     if (this.wantsDJ) return this.show('dj');
+    // Is there a ticket server? (Asked once, alongside everything else; a static host has none.)
+    ticketsApi.reachable().then((ok) => this.setDesk(ok));
     const saved = loadPass();
     if (!saved) return this.show('enter');
     this.pass = saved;
@@ -295,10 +313,24 @@ class Gate {
   }
 
   /** Open the card under the title (the button gives way to it). */
+  /** No ticket server: offer the offline demo (in the header, the card's views). Back on: hide it. */
+  setDesk(ok) {
+    this.noDesk = !ok;
+    for (const n of this.node.querySelectorAll('.demo-entry')) n.classList.toggle('hidden', ok);
+    for (const n of this.node.querySelectorAll('.demo-hero')) n.classList.toggle('hidden', ok || !!this.cardOpen);
+  }
+
+  /** The offline demo: in without a ticket, to the local crowd and DJ (no server is there). */
+  enterDemo() {
+    this.pass = null;
+    this.enter();
+  }
+
   reveal() {
     const card = this.q('.card');
     card.classList.remove('hidden');
     this.q('.cta').classList.add('hidden');
+    for (const n of this.node.querySelectorAll('.demo-hero')) n.classList.add('hidden');
     // The header becomes one block (the Angkor crest, the title over it) and the card follows it
     // in the page's flow, so they can't overlap; the card scrolls inside itself if it's tight.
     this.node.classList.add('hero-compact');

@@ -123,6 +123,7 @@ const PAGE = `
           <h2 class="font-display text-2xl">THE BOX OFFICE IS OFFLINE</h2>
           <p class="text-sm text-white/60 max-w-[32ch]">Tickets are sold by the E-Rave server, which can't be reached right now.</p>
           <button type="button" class="retry btn-rave rounded-xl px-6 py-3 font-display text-xl tracking-wider text-white">TRY AGAIN</button>
+          <a href="${ENTRANCE}" class="text-sm text-cyan underline underline-offset-4 hover:text-white">Or try the offline demo at the entrance</a>
         </section>
       </div>
     </div>

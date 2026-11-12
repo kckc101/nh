@@ -12,6 +12,22 @@ async function call(path, init) {
 const post = (path, body) => call(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 
 export const ticketsApi = {
+  /**
+   * Is there a ticket server to talk to? false on a static host with no server behind it (GitHub
+   * Pages, where /api is a 404 page) or when it doesn't answer within 4 s.
+   */
+  async reachable() {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 4000);
+    try {
+      const res = await fetch(`${SERVER}/api/health`, { signal: ctl.signal, cache: 'no-store' });
+      return res.ok && (await res.json().catch(() => null))?.ok === true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
   /** { currency, configured, mock, types: [{ id, label, price }] } */
   types: () => call('/types'),
   /** → { tranId, status, amount, currency, expiresInMs, qrString, qrImage, abapayDeeplink } */
