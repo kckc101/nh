@@ -4,18 +4,33 @@
 
 export const SYNTH_BARS = 96;
 
-// Built-in procedural tracks. Every client renders these deterministically from the seed,
-// so the whole crowd hears the same music, position-synced to the server clock.
+// Built-in procedural house tracks (styles in the client's src/audio/synth.js). Every client
+// renders these deterministically from the seed, so the whole crowd hears the same music,
+// position-synced to the server clock.
 export const SYNTH_PRESETS = [
-  { id: 'angkor-sunrise', title: 'Angkor Sunrise', artist: 'E-Rave Residents', bpm: 124, seed: 1107, style: 'house', key: 3 },
-  { id: 'mekong-bass', title: 'Mekong Bassline', artist: 'DJ Kroma', bpm: 128, seed: 2291, style: 'techno', key: 0 },
-  { id: 'apsara-acid', title: 'Apsara Acid', artist: 'Neon Naga', bpm: 132, seed: 3373, style: 'acid', key: 5 },
-  { id: 'tuktuk-turbo', title: 'Tuk-Tuk Turbo', artist: 'Phnom Penh Underground', bpm: 140, seed: 4421, style: 'trance', key: 2 },
-  { id: 'penh-nights', title: 'Phnom Penh Nights', artist: 'Riverside Collective', bpm: 122, seed: 5953, style: 'deep', key: 7 },
+  { id: 'riverside-sunset', title: 'Riverside Sunset', artist: 'E-Rave Residents', bpm: 123, seed: 7311, style: 'piano', key: 0 },
+  { id: 'deep-mekong', title: 'Deep Mekong', artist: 'DJ Kroma', bpm: 120, seed: 8423, style: 'deep', key: 5 },
+  { id: 'penh-disco', title: 'Phnom Penh Disco', artist: 'Riverside Collective', bpm: 124, seed: 9539, style: 'disco', key: 7 },
+];
+
+/**
+ * The default background music: the only track in the starting playlist, so it loops until the
+ * DJ queues something else. (The built-in house set is still there to add from the DJ panel.)
+ * Its length is known, so it restarts on time.
+ */
+export const DEFAULT_TRACKS = [
+  {
+    type: 'youtube',
+    src: 'https://www.youtube.com/watch?v=JJzK7Xbx2xM',
+    title: 'La Vida (Radio Edit)',
+    artist: 'dbasser, Peter Guzman, Jose Alves ft. Kaala Shaw',
+    bpm: 123,
+    duration: 284,
+  },
 ];
 
 export const TRACK_TYPES = ['synth', 'url', 'stream', 'youtube', 'soundcloud'];
-export const FX_TYPES = ['fire', 'co2', 'smoke', 'blackout', 'lasers', 'confetti', 'fireworks', 'hype'];
+export const FX_TYPES = ['fire', 'co2', 'smoke', 'blackout', 'lasers', 'confetti', 'fireworks', 'hype', 'drop', 'breakdown'];
 
 export function synthDuration(bpm) {
   return (SYNTH_BARS * 4 * 60) / bpm;
@@ -70,7 +85,7 @@ export function sanitizeTrack(t) {
 export class DJController {
   constructor(now = () => Date.now()) {
     this.now = now;
-    this.queue = SYNTH_PRESETS.map((p) => synthTrack(p.id));
+    this.queue = DEFAULT_TRACKS.map((t) => ({ ...t, uid: makeUid() }));
     this.index = 0;
     this.playing = true;
     this.startedAt = now();
@@ -174,6 +189,19 @@ export class DJController {
     const cur = this.current;
     if (!cur || cur.uid !== uid || !this.playing || this.position() < 5) return false;
     return this.next();
+  }
+
+  /**
+   * A client reports a track's real length (YouTube only tells the browser). From then on
+   * tick() moves it on by the clock like any track with a known duration — even when nobody's
+   * listening, so the shared position can't run on past the end of the video.
+   */
+  reportDuration(uid, seconds) {
+    const t = this.queue.find((q) => q.uid === uid);
+    const s = Number(seconds);
+    if (!t || t.duration || !Number.isFinite(s) || s < 5 || s > 6 * 3600) return false;
+    t.duration = Math.round(s * 10) / 10;
+    return true;
   }
 
   /** Auto-advance tracks with a known duration. Returns true when state changed. */

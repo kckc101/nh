@@ -6,6 +6,8 @@ import { pointsMaterial } from './shaders.js';
 
 export const KIND = { PLAIN: 0, FIRE: 1, SMOKE: 2 };
 
+const POOL_ATTRS = ['position', 'pcolor', 'size', 'alpha']; // re-uploaded while particles live
+
 export class ParticlePool {
   constructor(scene, max, texture, blending) {
     this.max = max;
@@ -61,9 +63,12 @@ export class ParticlePool {
     this.drag[i] = o.drag ?? 0;
     this.grow[i] = o.grow ?? 0;
     this.kind[i] = o.kind ?? KIND.PLAIN;
+    this.dirty = true;
   }
 
   update(dt) {
+    if (!this.active && !this.dirty) return; // nothing alive, nothing new: skip the pool
+    this.dirty = false;
     let live = 0;
     for (let i = 0; i < this.max; i++) {
       if (this.life[i] < 0) continue;
@@ -110,7 +115,7 @@ export class ParticlePool {
       }
     }
     if (live || this.active) {
-      for (const k of ['position', 'pcolor', 'size', 'alpha']) this.geo.attributes[k].needsUpdate = true;
+      for (const k of POOL_ATTRS) this.geo.attributes[k].needsUpdate = true;
     }
     this.active = live;
   }

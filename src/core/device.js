@@ -14,6 +14,9 @@ export const settings = Object.assign(
     bots: isMobile ? 22 : 46,
     autoFx: true,
     autoPerf: true, // dynamic resolution + automatic effect fallback
+    showMyTag: true, // your own floating name tag
+    dronePip: true, // the live drone cam picture-in-picture (I)
+    cinematic: true, // the film grade, anamorphic streaks, grain and letterbox moments
   },
   load('erave.settings', {}),
 );

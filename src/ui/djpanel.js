@@ -1,10 +1,53 @@
 // DJ host control panel: transport + queue, add tracks (built-in, upload, MP3 / Icecast /
-// YouTube / SoundCloud link), stage FX pad, announcements, live mic and tempo.
+// YouTube / SoundCloud link), strobe lighting (mode, rate, flash length, hold-to-flash),
+// drone cam (live feed on/off, flight mode, speed), the broadcast vision mixer (which of the five
+// cameras the DJ screen and the raver screens show, or the auto director, and its cut length),
+// stage FX pad, announcements, live mic and tempo.
 
 import { el, esc, toast, $, $$ } from './dom.js';
 import { icon, renderIcons } from './icons.js';
 import { SYNTH_PRESETS } from '../../shared/dj.js';
 import { parseMediaUrl } from '../audio/embeds.js';
+import { LIGHT_DEFAULTS, LIGHT_RATES, FLASH_MS } from '../../shared/lighting.js';
+import { DRONECAM_DEFAULTS, DRONE_SPEEDS, BROADCAST_CAMS, CUT_BEATS } from '../../shared/dronecam.js';
+import { SHOW_PHASES, SHOW_DEFAULTS } from '../../shared/show.js';
+
+/** The broadcast rig's cameras (world/broadcast.js), in the panel. */
+const CAM_UI = {
+  stage: { n: 1, label: 'Stage', hint: 'Front of house: the booth, rig and LED wall' },
+  crowd: { n: 2, label: 'Crowd', hint: 'High in the north stand: the whole crowd' },
+  booth: { n: 3, label: 'Booth', hint: 'Over your shoulder, out to the crowd' },
+  drone: { n: 4, label: 'Drone', hint: 'The roaming drone (flight mode above)' },
+  pit: { n: 5, label: 'Pit', hint: 'Eye level in the front rows, handheld' },
+};
+const OUTPUT_UI = [
+  { id: 'dj', label: 'DJ screen', hint: 'LED wall + your booth monitor' },
+  { id: 'raver', label: 'Raver screens', hint: 'Side towers + everyone’s picture-in-picture' },
+];
+
+const DRONE_MODE_UI = [
+  { id: 'stadium', label: 'Stadium', hint: 'High aerial of the whole venue' },
+  { id: 'orbit', label: 'Orbit', hint: 'Circles inside the bowl' },
+  { id: 'flythrough', label: 'Flythrough', hint: 'Through the rings, low swoops' },
+  { id: 'crane_shot', label: 'Crane', hint: 'Rises up to a wide of the stage' },
+];
+
+const LIGHT_MODE_UI = [
+  { id: 'normal', label: 'Normal', hint: 'Festival lighting' },
+  { id: 'auto', label: 'Auto strobe', hint: 'Blackout + flash on the beat' },
+  { id: 'manual', label: 'Blackout', hint: 'Dark until you hold flash' },
+];
+const LIGHT_RATE_UI = [
+  { id: 'bar', label: 'Bar', hint: 'downbeat' },
+  { id: 'beat', label: '1/4', hint: 'every beat' },
+  { id: 'eighth', label: '1/8', hint: 'every half beat' },
+];
+
+/** The lighting director's cues (lightingdirector.js), for everyone. */
+const CUES = [
+  { id: 'drop', label: 'DROP', hint: 'Lights out · white blinders · CO2 · full lasers', color: '#00ff44', title: 'Call the drop (holds 16 bars)' },
+  { id: 'breakdown', label: 'BREAKDOWN', hint: 'Lasers down · deep purple & blue · slow haze', color: '#8b5cff', title: 'Call the breakdown (holds 8 bars)' },
+];
 
 const FX = [
   { id: 'fire', label: 'Fire Cannons', emoji: '🔥', color: '#ff6a1f' },
@@ -40,11 +83,14 @@ export class DJPanel {
     this.mic = mic;
     this.state = null;
     this.taps = [];
+    this.light = { ...LIGHT_DEFAULTS };
+    this.drone = { ...DRONECAM_DEFAULTS };
+    this.onAir = {}; // output id → the camera it's showing now
 
     const sec = (title, body) => `<section class="space-y-2.5"><h3 class="text-[11px] font-semibold tracking-[.25em] text-white/45">${title}</h3>${body}</section>`;
     this.node = el(`
       <aside class="djp pointer-events-auto fixed z-40 inset-0 md:inset-auto md:top-0 md:right-0 md:h-full md:w-[420px] glass-strong md:border-l border-white/10
-                    flex flex-col translate-x-full transition-transform duration-300 ease-out" aria-label="DJ control panel" style="--accent:#ff2bd6">
+                    flex flex-col translate-x-full transition-transform duration-300 ease-out" aria-label="DJ control panel" style="--accent:#ff2bd6;backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(6,3,13,.97)">
         <header class="flex items-center justify-between px-5 pt-[calc(1rem+env(safe-area-inset-top))] pb-3 border-b border-white/10">
           <div>
             <div class="text-[10px] tracking-[.3em] text-magenta font-semibold">HOST MODE</div>
@@ -67,7 +113,78 @@ export class DJPanel {
                 <span class="np-len font-mono text-xs text-white/60">--:--</span>
               </div>
             </div>`)}
-          ${sec('STAGE FX', `<div class="grid grid-cols-4 gap-2">${FX.map((f) => `
+          ${sec('LIGHTING', `
+            <button class="larena w-full rounded-xl px-3 py-2.5 flex items-center justify-between gap-3 border border-white/15 bg-white/5" aria-pressed="false" title="Arena blackout (K)">
+              <span class="text-left"><span class="block text-sm font-semibold">Arena blackout <span class="text-[10px] font-normal text-white/40">K</span></span>
+                <span class="block text-[11px] text-white/50">House lights, sky and crowd glow off · the stage show stays on</span></span>
+              <span class="larena-pill rounded-full px-2.5 py-1 text-[11px] font-bold">OFF</span></button>
+            <div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Lighting mode">
+              ${LIGHT_MODE_UI.map((m) => `<button class="lmode chip rounded-xl px-2 py-2 text-left" data-lmode="${m.id}" aria-pressed="false">
+                <span class="block text-[13px] font-semibold">${m.label}</span><span class="block text-[10px] text-white/50 leading-tight">${m.hint}</span></button>`).join('')}
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] text-white/50 w-14">Flash</span>
+              <div class="flex gap-1.5 flex-1" role="group" aria-label="Flash rate">
+                ${LIGHT_RATE_UI.map((r) => `<button class="lrate chip rounded-lg px-2 py-1 flex-1 text-xs font-semibold" data-lrate="${r.id}" title="${r.hint}" aria-pressed="false">${r.label}</button>`).join('')}
+              </div>
+            </div>
+            <label class="flex items-center gap-2 text-[11px] text-white/50"><span class="w-14">Length</span>
+              <input type="range" class="lms flex-1 accent-[#ff2bd6]" min="${FLASH_MS.min}" max="${FLASH_MS.max}" step="5" value="${FLASH_MS.default}" aria-label="Flash length"/>
+              <span class="lms-v font-mono text-white/80 w-12 text-right">${FLASH_MS.default} ms</span></label>
+            <button class="lhold w-full rounded-2xl py-4 font-display text-2xl tracking-wider select-none touch-none border border-white/20 bg-white/5 transition-[background,box-shadow] duration-75"
+                    aria-label="Hold to flash">HOLD TO FLASH <span class="block font-sans text-[10px] tracking-[.2em] text-white/50">OR HOLD H · L CYCLES MODES</span></button>
+            <p class="lbpm text-[11px] text-white/50 font-mono"></p>`)}
+          ${sec('LASER SHOW // MAIN DROP', `
+            <button class="show-auto w-full rounded-xl px-3 py-2.5 flex items-center justify-between gap-3 border border-[#00ff33]/40 bg-[#00ff33]/5" aria-pressed="false">
+              <span class="text-left min-w-0"><span class="block text-sm font-bold tracking-wide">AUTO DROP SEQUENCE</span>
+                <span class="show-status block text-[11px] text-white/55 truncate">Tease → Blinder → Laser drop → Pyro gate → Outro, on the beat</span></span>
+              <span class="show-pill shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold">OFF</span></button>
+            <div class="h-1.5 rounded-full bg-white/10 overflow-hidden" aria-hidden="true"><div class="show-bar h-full w-0 bg-[#00ff33] transition-[width] duration-100"></div></div>
+            <div class="grid grid-cols-5 gap-1.5" role="group" aria-label="Laser show phases">
+              ${SHOW_PHASES.map((p, i) => `<button class="show-pad chip rounded-lg px-1 py-2 text-center" data-phase="${i}" aria-pressed="false" title="Start ${p.label} on the next beat (${p.beats} beats, looping)">
+                <span class="block text-[13px] font-bold leading-none">${i + 1}</span><span class="block text-[9px] text-white/60 leading-tight mt-1">${p.label}</span></button>`).join('')}
+            </div>
+            <button class="show-reset w-full rounded-xl py-2 text-sm font-bold tracking-wide border border-[#ff2d55]/50 text-[#ff6b8a] hover:bg-[#ff2d55]/10">BLACKOUT / RESET</button>
+            <p class="text-[10px] text-white/40">Everything starts on the next beat. A pad loops its phase until you change it; during AUTO it jumps the sequence there.</p>`)}
+          ${sec('DRONE CAM', `
+            <button class="dfeed w-full rounded-xl px-3 py-2.5 flex items-center justify-between gap-3 border border-white/15 bg-white/5" aria-pressed="true">
+              <span class="text-left"><span class="block text-sm font-semibold">Live feed on the screens</span>
+                <span class="block text-[11px] text-white/50">LED wall, booth monitor and side towers · BROADCAST picks the cameras</span></span>
+              <span class="dfeed-pill rounded-full px-2.5 py-1 text-[11px] font-bold">ON</span></button>
+            <div class="grid grid-cols-2 gap-1.5" role="group" aria-label="Drone flight mode">
+              ${DRONE_MODE_UI.map((m) => `<button class="dmode chip rounded-xl px-2 py-2 text-left" data-dmode="${m.id}" aria-pressed="false">
+                <span class="block text-[13px] font-semibold">${m.label}</span><span class="block text-[10px] text-white/50 leading-tight">${m.hint}</span></button>`).join('')}
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] text-white/50 w-14">Speed</span>
+              <div class="flex gap-1.5 flex-1" role="group" aria-label="Drone speed">
+                ${DRONE_SPEEDS.map((v) => `<button class="dspeed chip rounded-lg px-2 py-1 flex-1 text-xs font-semibold" data-dspeed="${v}" aria-pressed="false">${v}×</button>`).join('')}
+              </div>
+            </div>`)}
+          ${sec('BROADCAST', `
+            ${OUTPUT_UI.map((o) => `
+            <div class="space-y-1.5">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="text-[13px] font-semibold">${o.label} <span class="text-[10px] font-normal text-white/45">${o.hint}</span></span>
+                <span class="onair-${o.id} shrink-0 font-mono text-[10px] text-[#ff4d6d] whitespace-nowrap" aria-live="polite">● —</span>
+              </div>
+              <div class="grid grid-cols-6 gap-1" role="group" aria-label="${o.label} camera">
+                <button class="bauto chip rounded-lg px-1 py-1.5 text-[11px] font-bold" data-bout="${o.id}" aria-pressed="false" title="Auto director: cuts on the beat">AUTO</button>
+                ${BROADCAST_CAMS.map((c) => `<button class="bcam chip rounded-lg px-1 py-1.5 text-center" data-bout="${o.id}" data-bcam="${c}" aria-pressed="false" title="CAM ${CAM_UI[c].n} · ${CAM_UI[c].hint}">
+                  <span class="block text-[12px] font-bold leading-none">${CAM_UI[c].n}</span><span class="block text-[9px] text-white/55 leading-tight mt-0.5">${CAM_UI[c].label}</span></button>`).join('')}
+              </div>
+            </div>`).join('')}
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] text-white/50 w-14">Auto cut</span>
+              <div class="flex gap-1.5 flex-1" role="group" aria-label="Auto director cut length">
+                ${CUT_BEATS.map((b) => `<button class="bcut chip rounded-lg px-2 py-1 flex-1 text-xs font-semibold" data-bcut="${b}" aria-pressed="false">${b} beats</button>`).join('')}
+              </div>
+            </div>
+            <p class="text-[10px] text-white/40">N next camera on the DJ screen · Shift+N on the raver screens · M both back to AUTO</p>`)}
+          ${sec('STAGE FX', `<div class="grid grid-cols-2 gap-2 mb-2">${CUES.map((c) => `
+            <button class="fx-pad rounded-xl px-3 py-2.5 text-left bg-white/5" style="--glow:${c.color}40" data-fx="${c.id}" title="${c.title}">
+              <span class="block font-display text-xl tracking-wider leading-none" style="color:${c.color}">${c.label}</span><span class="block text-[10px] text-white/50 leading-tight mt-1">${c.hint}</span></button>`).join('')}</div>
+            <div class="grid grid-cols-4 gap-2">${FX.map((f) => `
             <button class="fx-pad rounded-xl aspect-square flex flex-col items-center justify-center gap-1 text-center bg-white/5" style="--glow:${f.color}40" data-fx="${f.id}">
               <span class="text-2xl leading-none">${f.emoji}</span><span class="text-[10px] font-semibold leading-tight px-1">${f.label}</span></button>`).join('')}</div>`)}
           ${sec('ANNOUNCEMENT', `
@@ -133,7 +250,11 @@ export class DJPanel {
     root.append(this.node);
     renderIcons(this.node);
     this.bind();
-    requestAnimationFrame(() => this.tick());
+    // The readouts the tick updates, looked up once (not six querySelectors a frame).
+    this.live = { time: $(this.node, '.np-time'), detected: $(this.node, '.detected'), lbpm: $(this.node, '.lbpm') };
+    this.shown = {};
+    this.nextTick = 0;
+    requestAnimationFrame((t) => this.tick(t));
   }
 
   get open() {
@@ -151,6 +272,37 @@ export class DJPanel {
     $(n, '.next').addEventListener('click', () => this.net.dj('next'));
     $(n, '.prev').addEventListener('click', () => this.net.dj('prev'));
     $$(n, '[data-fx]').forEach((b) => b.addEventListener('click', () => this.net.fx(b.dataset.fx)));
+
+    // Drone cam: everyone's drone and screens follow these.
+    $(n, '.dfeed').addEventListener('click', () => this.net.dronecam({ feed: !this.drone.feed }));
+    $$(n, '[data-dmode]').forEach((b) => b.addEventListener('click', () => this.net.dronecam({ mode: b.dataset.dmode })));
+    $$(n, '[data-dspeed]').forEach((b) => b.addEventListener('click', () => this.net.dronecam({ speed: Number(b.dataset.dspeed) })));
+    // Broadcast: a camera button takes that output off AUTO; AUTO hands it back to the director.
+    $$(n, '.bcam').forEach((b) => b.addEventListener('click', () => this.setScreen(b.dataset.bout, b.dataset.bcam)));
+    $$(n, '.bauto').forEach((b) => b.addEventListener('click', () => this.net.dronecam({ [`${b.dataset.bout}Auto`]: !this.drone[`${b.dataset.bout}Auto`] })));
+    $$(n, '[data-bcut]').forEach((b) => b.addEventListener('click', () => this.net.dronecam({ cutBeats: Number(b.dataset.bcut) })));
+
+    // Lighting: mode / rate / length go to the server (everyone's room follows), hold-to-flash too.
+    $$(n, '[data-lmode]').forEach((b) => b.addEventListener('click', () => this.net.light({ mode: b.dataset.lmode })));
+    $(n, '.larena').addEventListener('click', () => this.toggleArena());
+    // The laser show: everyone's stage follows, on the next beat.
+    $(n, '.show-auto').addEventListener('click', () => this.net.show({ action: this.showAuto ? 'stop' : 'auto' }));
+    $$(n, '.show-pad').forEach((b) => b.addEventListener('click', () => this.net.show({ action: 'phase', phase: Number(b.dataset.phase) })));
+    $(n, '.show-reset').addEventListener('click', () => this.net.show({ action: 'blackout' }));
+    $$(n, '[data-lrate]').forEach((b) => b.addEventListener('click', () => this.net.light({ rate: b.dataset.lrate })));
+    const lms = $(n, '.lms');
+    lms.addEventListener('input', () => ($(n, '.lms-v').textContent = `${lms.value} ms`));
+    lms.addEventListener('change', () => this.net.light({ flashMs: Number(lms.value) }));
+    const hold = $(n, '.lhold');
+    const press = (e) => {
+      e.preventDefault();
+      hold.setPointerCapture?.(e.pointerId);
+      this.holdFlash(true);
+    };
+    const release = () => this.holdFlash(false);
+    hold.addEventListener('pointerdown', press);
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) hold.addEventListener(ev, release);
+    hold.addEventListener('contextmenu', (e) => e.preventDefault());
 
     const ann = $(n, '.ann');
     ann.addEventListener('submit', (e) => {
@@ -381,8 +533,8 @@ export class DJPanel {
       return;
     }
     db = Math.max(-60, Math.min(0, db));
-    m.level = db > m.level ? db : m.level - 1.2; // fast attack, slow release
-    m.peak = db > m.peak ? db : Math.max(-60, m.peak - 0.25);
+    m.level = db > m.level ? db : m.level - 6; // fast attack, slow release
+    m.peak = db > m.peak ? db : Math.max(-60, m.peak - 1.5);
     const pct = (v) => `${((v + 60) / 60) * 100}%`;
     fill.style.width = pct(m.level);
     fill.style.background = m.peak > -3 ? '#ff2d55' : m.peak > -12 ? 'linear-gradient(90deg,#9dff00,#ffc400)' : '#9dff00';
@@ -419,14 +571,145 @@ export class DJPanel {
     renderIcons($(n, '.queue'));
   }
 
-  tick() {
-    if (this.open) {
-      $(this.node, '.np-time').textContent = fmt(this.audio.position);
+  /** The laser show's state (from the server): which mode, which phase. */
+  setShow(state) {
+    this.show = { ...SHOW_DEFAULTS, ...state };
+    this.showAuto = this.show.mode === 'auto';
+    const pill = $(this.node, '.show-pill');
+    pill.textContent = this.showAuto ? 'ON' : 'OFF';
+    pill.style.cssText = this.showAuto ? 'background:#00ff33;color:#000' : 'background:rgba(255,255,255,.12);color:rgba(255,255,255,.6)';
+    $(this.node, '.show-auto').setAttribute('aria-pressed', String(this.showAuto));
+  }
+
+  /** Where the show is right now (10 times a second): the phase, the beat, the progress bar. */
+  setShowStatus(st, state) {
+    const n = this.node;
+    const key = st ? `${st.mode}:${st.phase}:${Math.floor(st.beat)}` : state?.mode === 'off' || !state ? 'idle' : 'waiting';
+    if (key === this.showKey) return;
+    this.showKey = key;
+    // The sequence ran out (or the blackout ended): AUTO's switch goes back off.
+    if (!st && this.showAuto && state?.mode !== 'auto') this.setShow(SHOW_DEFAULTS);
+    let text = 'Tease → Blinder → Laser drop → Pyro gate → Outro, on the beat';
+    let pct = 0;
+    if (st?.mode === 'blackout') text = 'BLACKOUT';
+    else if (st) {
+      const p = SHOW_PHASES[st.phase];
+      text = `${st.phase + 1} · ${p.label} · beat ${Math.floor(st.beat) + 1}/${p.beats}${st.mode === 'loop' ? ' · LOOP' : ''}`;
+      if (st.mode === 'auto') {
+        const total = SHOW_PHASES.reduce((a, q) => a + q.beats, 0);
+        const before = SHOW_PHASES.slice(0, st.phase).reduce((a, q) => a + q.beats, 0);
+        pct = ((before + st.beat) / total) * 100;
+      } else pct = (st.beat / st.len) * 100;
+    } else if (key === 'waiting') text = 'Starting on the next beat…';
+    $(n, '.show-status').textContent = text;
+    $(n, '.show-bar').style.width = `${Math.min(100, pct).toFixed(1)}%`;
+    $$(n, '.show-pad').forEach((b) => b.classList.toggle('onair', !!st && Number(b.dataset.phase) === st.phase));
+    $$(n, '.show-pad').forEach((b) => b.setAttribute('aria-pressed', String(!!st && st.mode === 'loop' && Number(b.dataset.phase) === st.phase)));
+  }
+
+  /** Arena Blackout on / off for everyone (the panel switch or the K key). */
+  toggleArena() {
+    this.net.light({ arena: !this.light.arena });
+  }
+
+  /** Press (true) / release (false) the flash button — from the panel or the H key. */
+  holdFlash(on) {
+    if (on === this.holding) return;
+    this.holding = on;
+    this.net.lightHold(on);
+  }
+
+  /** Cycle Normal → Auto strobe → Blackout (the L key). */
+  cycleLight() {
+    const ids = LIGHT_MODE_UI.map((m) => m.id);
+    this.net.light({ mode: ids[(ids.indexOf(this.light.mode) + 1) % ids.length] });
+  }
+
+  /** Put a camera on an output ('dj' | 'raver') for everyone: off AUTO, onto that camera. */
+  setScreen(out, cam) {
+    this.net.dronecam({ [`${out}Cam`]: cam, [`${out}Auto`]: false });
+  }
+
+  /** N / Shift+N: the next camera on an output, from the one it shows now (AUTO's pick included). */
+  nextCamera(out) {
+    const now = this.onAir[out] || this.drone[`${out}Cam`];
+    this.setScreen(out, BROADCAST_CAMS[(BROADCAST_CAMS.indexOf(now) + 1) % BROADCAST_CAMS.length]);
+  }
+
+  /** M: both outputs back to the auto director. */
+  autoAll() {
+    this.net.dronecam({ djAuto: true, raverAuto: true });
+  }
+
+  /** What each output is showing right now (the director's cuts, a VIP show): "● CAM 2 · CROWD". */
+  setOnAir(out, cam) {
+    this.onAir[out] = cam;
+    const label = $(this.node, `.onair-${out}`);
+    if (label) label.textContent = `● CAM ${CAM_UI[cam]?.n ?? '?'} · ${(CAM_UI[cam]?.label ?? cam).toUpperCase()}`;
+    $$(this.node, `.bcam[data-bout="${out}"]`).forEach((b) => b.classList.toggle('onair', b.dataset.bcam === cam));
+  }
+
+  /** Reflect the drone cam state (as broadcast by the server). */
+  setDroneCam(state) {
+    this.drone = { ...this.drone, ...state };
+    const n = this.node;
+    const feed = $(n, '.dfeed');
+    feed.setAttribute('aria-pressed', String(this.drone.feed));
+    const pill = $(n, '.dfeed-pill');
+    pill.textContent = this.drone.feed ? 'ON' : 'OFF';
+    pill.style.cssText = this.drone.feed ? 'background:#ff2d55;color:#fff' : 'background:rgba(255,255,255,.12);color:rgba(255,255,255,.6)';
+    $$(n, '[data-dmode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.dmode === this.drone.mode)));
+    $$(n, '[data-dspeed]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.dspeed) === this.drone.speed)));
+    for (const o of OUTPUT_UI) {
+      const auto = !!this.drone[`${o.id}Auto`];
+      const cam = this.drone[`${o.id}Cam`];
+      $(n, `.bauto[data-bout="${o.id}"]`).setAttribute('aria-pressed', String(auto));
+      $$(n, `.bcam[data-bout="${o.id}"]`).forEach((b) => b.setAttribute('aria-pressed', String(!auto && b.dataset.bcam === cam)));
+    }
+    $$(n, '[data-bcut]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.bcut) === this.drone.cutBeats)));
+  }
+
+  /** Reflect the room's lighting state (as broadcast by the server). */
+  setLight(state) {
+    this.light = { ...this.light, ...state };
+    const n = this.node;
+    $$(n, '[data-lmode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lmode === this.light.mode)));
+    $$(n, '[data-lrate]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lrate === this.light.rate)));
+    const lms = $(n, '.lms');
+    if (document.activeElement !== lms) {
+      lms.value = this.light.flashMs;
+      $(n, '.lms-v').textContent = `${this.light.flashMs} ms`;
+    }
+    const arena = !!this.light.arena;
+    $(n, '.larena').setAttribute('aria-pressed', String(arena));
+    const pill = $(n, '.larena-pill');
+    pill.textContent = arena ? 'ON' : 'OFF';
+    pill.style.cssText = arena ? 'background:#ffffff;color:#000' : 'background:rgba(255,255,255,.12);color:rgba(255,255,255,.6)';
+    const hold = $(n, '.lhold');
+    hold.style.background = this.light.hold ? '#ffffff' : '';
+    hold.style.color = this.light.hold ? '#000000' : '';
+    hold.style.boxShadow = this.light.hold ? '0 0 40px rgba(255,255,255,.8)' : '';
+  }
+
+  /** Write a readout only when its text changed (a write re-lays-out and repaints the panel). */
+  setText(key, text) {
+    if (this.shown[key] === text) return;
+    this.shown[key] = text;
+    this.live[key].textContent = text;
+  }
+
+  /** The open panel's readouts, 10 times a second (the clock shows whole seconds, the mic meter eases fine at 10 Hz). */
+  tick(now = 0) {
+    if (this.open && now >= this.nextTick) {
+      this.nextTick = now + 100;
+      this.setText('time', fmt(this.audio.position));
       const st = this.audio.beat.state;
       const how = { detected: `detected live, ${Math.round(st.confidence * 100)}% sure`, track: 'track tempo, locking on...', manual: 'manual clock' }[st.bpmSource];
-      $(this.node, '.detected').textContent = `${Math.round(st.bpm)} BPM · ${how}`;
+      this.setText('detected', `${Math.round(st.bpm)} BPM · ${how}`);
+      const every = 60000 / st.bpm / LIGHT_RATES[this.light.rate];
+      this.setText('lbpm', `Locked to ${st.bpm.toFixed(1)} BPM → a ${this.light.flashMs} ms flash every ${Math.round(every)} ms`);
       this.meterTick();
     }
-    requestAnimationFrame(() => this.tick());
+    requestAnimationFrame((t) => this.tick(t));
   }
 }

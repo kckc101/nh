@@ -7,8 +7,8 @@
   --font-display: "Twemoji Country Flags", "Koulen", "Chakra Petch", "Kantumruy Pro", Impact, sans-serif;
   --font-ui: "Twemoji Country Flags", "Chakra Petch", "Kantumruy Pro", "Khmer UI", "Leelawadee UI", system-ui, sans-serif;
   --font-khmer: "Twemoji Country Flags", "Kantumruy Pro", "Koulen", "Khmer UI", "Leelawadee UI", sans-serif;
-  --color-night: #07040d;
-  --color-ink: #120a22;
+  --color-night: #030207;
+  --color-ink: #0a0616;
   --color-cyan: #00f0ff;
   --color-magenta: #ff2bd6;
   --color-acid: #9dff00;
@@ -67,14 +67,14 @@ select {
 
 /* Declared as utilities so responsive variants (md:glass) work in Tailwind v4. */
 @utility glass {
-  background: rgba(16, 8, 34, 0.5);
+  background: rgba(7, 4, 16, 0.58);
   backdrop-filter: blur(12px) saturate(150%);
   -webkit-backdrop-filter: blur(12px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 @utility glass-strong {
-  background: rgba(12, 6, 26, 0.82);
+  background: rgba(6, 3, 13, 0.88);
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -106,6 +106,15 @@ select {
     background: color-mix(in srgb, var(--accent, var(--color-cyan)) 18%, transparent);
     box-shadow: 0 0 14px color-mix(in srgb, var(--accent, var(--color-cyan)) 45%, transparent);
   }
+  /* DJ panel BROADCAST: the camera on air on that output (a tally light, the director's cuts too) */
+  .show-pad.onair {
+    border-color: #00ff33;
+    box-shadow: inset 0 -3px 0 #00ff33, 0 0 12px rgba(0, 255, 51, 0.35);
+  }
+  .bcam.onair {
+    border-color: #ff2d55;
+    box-shadow: inset 0 -3px 0 #ff2d55, 0 0 12px rgba(255, 45, 85, 0.35);
+  }
 
   .swatch {
     transition: transform 0.12s, box-shadow 0.15s;
@@ -114,12 +123,49 @@ select {
     transform: scale(0.9);
   }
   .swatch[aria-pressed="true"] {
-    box-shadow: 0 0 0 2px #07040d, 0 0 0 4px #fff, 0 0 16px var(--sw);
+    box-shadow: 0 0 0 2px #030207, 0 0 0 4px #fff, 0 0 16px var(--sw);
   }
+
+  /* The entrance and tickets pages once their card is open: the title shrinks up and the extras
+     go, so the card fits on the same screen (no scrolling, no second frame). */
+  /* With the card open, the header is one block: the Angkor crest with the title over it, both
+     sized from --crest so the title always clears the crest's baseline. The card follows it in
+     the flow (never under it), fills what's left of the screen and scrolls inside itself. */
+  .hero-crest { display: none; }
+  .bd-angkor { transition: opacity 0.5s; }
+  .bd-compact .bd-angkor { opacity: 0; }
+  /* The logo is the biggest thing on the page: the crest up to 1000 px (a third of the screen's height). */
+  .hero-compact { --crest: min(1000px, 96vw, 105vh); }
+  .hero-compact.hero-wrap {
+    height: 100%;
+    min-height: 0 !important;
+    padding-top: clamp(10px, 2.5vh, 28px) !important;
+    padding-bottom: clamp(10px, 2.5vh, 24px) !important;
+    gap: clamp(8px, 2vh, 18px) !important;
+  }
+  .hero-compact .hero-head { position: relative; z-index: 20; width: var(--crest); flex-shrink: 0; }
+  .hero-compact .hero-crest { display: block; width: 100%; height: auto; }
+  .hero-compact .hero-words { position: absolute; left: 0; right: 0; top: 10%; }
+  .hero-compact .hero-title { font-size: calc(var(--crest) * 0.19) !important; }
+  .hero-compact .hero-sub { font-size: calc(var(--crest) * 0.05) !important; margin-top: 0 !important; }
+  .hero-compact .hero-main { flex: 1 1 auto; min-height: 0; padding-top: 0 !important; gap: clamp(8px, 2vh, 18px) !important; }
+  .hero-compact .card { position: relative; z-index: 10; flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .hero-compact .hero-extra { display: none !important; }
+  /* The ticket card, tightened to fit under the small title: the two tickets side by side. */
+  .hero-compact .steps { display: none !important; }
+  .hero-compact .card { padding: 0.9rem !important; }
+  .hero-compact .card > section { gap: 0.6rem !important; }
+  .hero-compact [data-view="choose"] label > span { display: none; } /* the ticket form's "(optional)" hints only */
+  .hero-compact .card .field { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+  .hero-compact .types { grid-template-columns: 1fr 1fr; }
+  .hero-compact .types .type { padding: 0.6rem 0.7rem !important; flex-direction: column; gap: 0.25rem !important; }
+  .hero-compact .types .t-label { font-size: 1.25rem !important; }
+  .hero-compact .types .t-perks { font-size: 11px !important; }
 
   .btn-rave {
     position: relative;
-    background: linear-gradient(100deg, #ff2bd6, #8b5cff 50%, #00f0ff);
+    /* Ends on the colour it starts with, so the sheen loops with no seam where the tile repeats. */
+    background: linear-gradient(100deg, #ff2bd6, #8b5cff 25%, #00f0ff 50%, #8b5cff 75%, #ff2bd6);
     background-size: 200% 100%;
     box-shadow: 0 0 24px rgba(255, 43, 214, 0.55), 0 0 60px rgba(0, 240, 255, 0.25);
     animation: sheen 3s linear infinite;
@@ -351,10 +397,65 @@ select {
   animation: rise 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* The gate: a pass unlocking once payment confirms. */
+@keyframes pass-unlock {
+  0% {
+    transform: perspective(900px) rotateX(70deg) translateY(40px) scale(0.86);
+    opacity: 0;
+    filter: brightness(2.4) saturate(0.4);
+  }
+  55% {
+    transform: perspective(900px) rotateX(-8deg) translateY(-6px) scale(1.03);
+    opacity: 1;
+    filter: brightness(1.6);
+  }
+  100% {
+    transform: none;
+    filter: none;
+  }
+}
+.pass-unlock {
+  animation: pass-unlock 1s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+@keyframes granted {
+  0% {
+    letter-spacing: 0.6em;
+    opacity: 0;
+    text-shadow: 0 0 40px currentColor;
+  }
+  60% {
+    opacity: 1;
+    text-shadow: 0 0 30px currentColor, 0 0 70px currentColor;
+  }
+  100% {
+    letter-spacing: 0.06em;
+    text-shadow: 0 0 10px currentColor;
+  }
+}
+.granted {
+  animation: granted 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes unlock-ring {
+  from {
+    transform: scale(0.3);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.unlock-ring {
+  animation: unlock-ring 1.2s cubic-bezier(0.1, 0.7, 0.3, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn-rave,
   .glitch,
-  .flicker {
+  .flicker,
+  .pass-unlock,
+  .granted,
+  .unlock-ring {
     animation: none;
   }
 }

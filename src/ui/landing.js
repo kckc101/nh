@@ -1,9 +1,7 @@
-// Entrance screen: neon Angkor skyline reflected in a pool, laser beams and bass pulses
-// at 128 BPM, and the "Enter" gesture that unlocks Web Audio.
+// The entrance backdrop: neon Angkor skyline reflected in a pool, laser beams and bass pulses at
+// 128 BPM. The gate (ui/gate.js) stands in front of it.
 
 import { el } from './dom.js';
-import { icon, renderIcons } from './icons.js';
-import { settings, saveSettings } from '../core/device.js';
 
 function prangPoints(cx, by, w, h, tiers = 6) {
   const left = [];
@@ -16,6 +14,22 @@ function prangPoints(cx, by, w, h, tiers = 6) {
   left.push([cx, by - h]);
   const right = left.slice(0, -1).reverse().map(([x, y]) => [2 * cx - x, y]);
   return [[cx - w / 2, by], ...left, ...right, [cx + w / 2, by]];
+}
+
+/**
+ * The neon Angkor sign as a compact crest for the page header (the entrance and tickets pages put
+ * it behind their title once the card is open, and the backdrop's big sign fades out).
+ */
+export function angkorCrest() {
+  const path = angkorPath();
+  return `<svg class="hero-crest pointer-events-none" viewBox="0 -12 800 274" aria-hidden="true">
+    <defs><filter id="crestGlow" x="-10%" y="-25%" width="120%" height="150%">
+      <feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter></defs>
+    <g filter="url(#crestGlow)" fill="none" stroke-linejoin="round" stroke-linecap="round">
+      <path d="${path}" stroke="#ff2bd6" stroke-width="3.2"/>
+      <path d="${path}" stroke="#00f0ff" stroke-width="1.3" transform="translate(0,-3)"/>
+    </g></svg>`;
 }
 
 function angkorPath() {
@@ -33,17 +47,22 @@ function angkorPath() {
   return d;
 }
 
-export function showLanding(root, onEnter) {
+/**
+ * The entrance backdrop: the neon Angkor skyline reflected in a pool, a perspective grid, laser
+ * beams and bass pulses at 128 BPM, behind whatever goes in `content` (the gate, ui/gate.js).
+ * @returns { node, content, close() } — close() fades it out and removes it.
+ */
+export function createBackdrop(root) {
   const path = angkorPath();
   const node = el(`
-    <section class="pointer-events-auto fixed inset-0 z-50 overflow-hidden flex flex-col items-center justify-center text-center select-none"
-      style="background: radial-gradient(120% 70% at 50% 110%, #4a0b55 0%, #1a0630 45%, #07040d 80%)">
+    <section class="pointer-events-auto fixed inset-0 z-50 overflow-hidden select-none"
+      style="background: radial-gradient(120% 70% at 50% 110%, #2e0838 0%, #0f041e 45%, #030207 80%)">
       <canvas class="absolute inset-0 w-full h-full"></canvas>
       <div class="absolute inset-x-0 bottom-0 h-[38%] opacity-50"
         style="background-image: linear-gradient(rgba(255,43,214,.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,240,255,.4) 1px, transparent 1px);
                background-size: 44px 44px; transform: perspective(380px) rotateX(62deg); transform-origin: bottom; mask-image: linear-gradient(to top, #000 10%, transparent)"></div>
 
-      <svg viewBox="0 0 800 520" class="absolute left-1/2 -translate-x-1/2 bottom-[3%] w-[min(1100px,135vw)] pointer-events-none" aria-hidden="true">
+      <svg viewBox="0 0 800 520" class="bd-angkor absolute left-1/2 -translate-x-1/2 bottom-[3%] w-[min(1100px,135vw)] pointer-events-none" aria-hidden="true">
         <defs>
           <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur stdDeviation="4" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
@@ -60,46 +79,14 @@ export function showLanding(root, onEnter) {
         </g>
       </svg>
 
-      <div class="relative z-10 px-6 -mt-[14vh] flex flex-col items-center">
-        <div class="rise flex flex-wrap items-center justify-center gap-2 mb-6 text-[11px] tracking-[.22em] font-semibold" style="animation-delay:.1s">
-          <span class="glass rounded-full px-3 py-1 flex items-center gap-2 text-white"><span class="size-2 rounded-full bg-[#ff2d55] pulse-dot"></span>LIVE NOW</span>
-          <span class="glass rounded-full px-3 py-1 text-cyan">DJ-HOSTED</span>
-          <span class="glass rounded-full px-3 py-1 text-gold">PHNOM PENH · ONLINE</span>
-        </div>
-        <h1 class="rise font-display leading-[.82] text-[clamp(88px,19vw,220px)] flicker"
-            style="background: linear-gradient(180deg,#fff 10%,#ff8ae6 45%,#ff2bd6 70%,#8b5cff); -webkit-background-clip:text; background-clip:text; color:transparent;
-                   filter: drop-shadow(0 0 18px rgba(255,43,214,.7)) drop-shadow(0 0 50px rgba(139,92,255,.5)); animation-delay:.2s">E-RAVE</h1>
-        <p class="rise font-display text-cyan neon text-[clamp(26px,5.4vw,58px)] tracking-[.32em] -mt-1 pl-[.32em]" style="animation-delay:.35s">CAMBODIA</p>
-        <p class="rise font-khmer text-gold neon-soft text-[clamp(18px,3vw,28px)] mt-2" style="animation-delay:.5s" lang="km">តន្ត្រី • រាំ • សប្បាយ</p>
-        <p class="rise text-white/70 text-sm md:text-base max-w-md mt-3" style="animation-delay:.6s">
-          The neon festival on the Mekong. Build your raver, drop into the crowd, and dance with a live DJ.
-        </p>
-        <button class="enter rise btn-rave mt-8 rounded-2xl px-9 py-4 font-display text-2xl md:text-3xl tracking-wider text-white flex items-center gap-3" style="animation-delay:.75s">
-          ${icon('play', 'size-7 fill-white')} ENTER THE RAVE
-        </button>
-        <div class="rise mt-5 flex flex-col sm:flex-row items-center gap-3 text-xs text-white/60" style="animation-delay:.9s">
-          <span class="flex items-center gap-1.5">${icon('headphones', 'size-4')} Best with headphones</span>
-          <span class="hidden sm:inline text-white/20">|</span>
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" class="reduce accent-[#ff2bd6] size-4" ${settings.reduceFlash ? 'checked' : ''}/>
-            Reduce flashing lights
-          </label>
-        </div>
-      </div>
+      <div class="content absolute inset-0 overflow-y-auto scroll-thin"></div>
     </section>`);
   root.append(node);
-  renderIcons(node);
-
-  const canvas = node.querySelector('canvas');
-  const stopAnim = animateBackground(canvas);
-  node.querySelector('.reduce').addEventListener('change', (e) => {
-    settings.reduceFlash = e.target.checked;
-    saveSettings();
-  });
-
-  return new Promise((resolve) => {
-    node.querySelector('.enter').addEventListener('click', () => {
-      onEnter?.(); // inside the gesture: unlocks Web Audio on Safari/iOS too
+  const stopAnim = animateBackground(node.querySelector('canvas'));
+  return {
+    node,
+    content: node.querySelector('.content'),
+    close() {
       node.style.transition = 'opacity .6s, transform .6s';
       node.style.opacity = '0';
       node.style.transform = 'scale(1.06)';
@@ -107,9 +94,8 @@ export function showLanding(root, onEnter) {
         stopAnim();
         node.remove();
       }, 620);
-      resolve();
-    }, { once: true });
-  });
+    },
+  };
 }
 
 function animateBackground(canvas) {

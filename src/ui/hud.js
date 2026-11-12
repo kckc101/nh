@@ -1,11 +1,13 @@
-// Festival HUD: now-playing + visualizer, connection / FPS / volume, dance & reaction bar,
-// TikTok-style floating reactions, DJ announcement banner, hype popups, settings & help.
+// Festival HUD: live / host pill (the DJ alone gets the now-playing card with the track,
+// visualizer and progress), connection / FPS / volume, dance & reaction bar,
+// TikTok-style floating reactions, DJ announcement banner, hype popups, drone cam toggle,
+// settings & help.
 
 import { el, $, $$, toast, markKhmer } from './dom.js';
 import { icon, renderIcons } from './icons.js';
 import { Chat } from './chat.js';
 import { createJoystick } from './joystick.js';
-import { DANCES } from '../avatar/dances.js';
+import { DANCES, RAVE_EMOTES } from '../avatar/dances.js';
 import { settings, saveSettings, isTouch } from '../core/device.js';
 import { load, save } from '../core/store.js';
 
@@ -26,11 +28,22 @@ export class HUD {
     this.floating = 0;
 
     const danceBtns = [{ id: 'idle', label: 'Vibe', icon: '🎵', key: '0' }, ...DANCES]
-      .map((d) => `<button class="act shrink-0 rounded-xl px-2.5 md:px-3 py-1.5 md:py-2 flex md:flex-col items-center gap-1.5 md:gap-0.5 md:min-w-[68px] border border-white/10 md:border-transparent glass md:bg-transparent md:backdrop-blur-none" data-dance="${d.id}" title="${d.label} (${d.key})">
-          <span class="text-lg md:text-xl leading-none">${d.icon}</span>
-          <span class="text-[11px] font-semibold whitespace-nowrap">${d.label}</span>
+      .map((d) => `<button class="act shrink-0 rounded-xl px-2.5 md:px-1.5 py-1.5 md:py-1.5 flex md:flex-col items-center gap-1.5 md:gap-0.5 md:min-w-[64px] border border-white/10 md:border-transparent glass md:bg-transparent md:backdrop-blur-none" data-dance="${d.id}" title="${d.label} (${d.key})">
+          <span class="text-lg leading-none">${d.icon}</span>
+          <span class="text-[11px] md:text-[10px] font-semibold whitespace-nowrap">${d.label}</span>
           <kbd class="hidden md:block text-[9px] text-white/35 font-mono">${d.key}</kbd></button>`)
       .join('');
+    const emoteBtns = RAVE_EMOTES.map(
+      (m) => `<button class="act emote shrink-0 rounded-xl px-3 py-1.5 flex items-center gap-1.5 glass md:bg-transparent md:backdrop-blur-none border border-white/10 md:border-transparent" data-emote="${m.id}" aria-pressed="false" title="${m.label} (Shift+${m.slot} or Numpad ${m.slot}) · click again to stop">
+          <span class="text-lg leading-none">${m.icon}</span>
+          <span class="text-[12px] font-semibold">${m.label}</span>
+          <kbd class="hidden md:inline text-[9px] text-white/35 font-mono">⇧${m.slot}</kbd></button>`,
+    ).join('');
+    // Phones: the emotes lead the swipeable dance row (a separate bar would sit on the joystick).
+    const emoteBtnsMobile = RAVE_EMOTES.map(
+      (m) => `<button class="act emote md:hidden shrink-0 rounded-xl px-2.5 py-1.5 flex items-center gap-1.5 glass border border-magenta/50" data-emote="${m.id}" aria-pressed="false">
+          <span class="text-lg leading-none">${m.icon}</span><span class="text-[11px] font-semibold whitespace-nowrap">${m.label}</span></button>`,
+    ).join('');
     const reactBtns = REACTIONS.map(
       (r) => `<button class="act react rounded-full md:rounded-xl size-12 md:size-auto md:px-3 md:py-2 grid md:flex md:flex-col place-items-center md:items-center glass md:bg-transparent md:backdrop-blur-none border border-white/10 md:border-transparent" data-react="${r.id}" title="${r.label} (${r.key})">
           <span class="text-2xl md:text-xl leading-none">${r.emoji}</span>
@@ -40,6 +53,7 @@ export class HUD {
 
     this.node = el(`
       <div class="hud fixed inset-0 pointer-events-none z-30 select-none" style="padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)">
+        ${isDJ ? `
         <div class="np pointer-events-auto absolute left-3 top-3 md:left-4 md:top-4 glass rounded-2xl p-2.5 md:p-3 flex items-center gap-3 w-[min(60vw,360px)]">
           <div class="relative size-11 md:size-14 shrink-0 rounded-xl grid place-items-center overflow-hidden"
                style="background: conic-gradient(from 0deg, #ff2bd6, #8b5cff, #00f0ff, #9dff00, #ffc400, #ff2bd6)">
@@ -56,25 +70,38 @@ export class HUD {
             <canvas class="viz mt-1 block w-full h-4 md:h-5"></canvas>
             <div class="h-[2px] mt-1 rounded bg-white/10 overflow-hidden"><div class="prog h-full w-0 bg-gradient-to-r from-magenta to-cyan"></div></div>
           </div>
-        </div>
+        </div>` : `
+        <div class="np pointer-events-auto absolute left-3 top-3 md:left-4 md:top-4 glass rounded-full h-9 px-3.5 flex items-center gap-2 text-[10px] tracking-[.18em] font-semibold max-w-[min(60vw,300px)]">
+          <span class="flex items-center gap-1 text-[#ff4d6d] shrink-0"><span class="size-1.5 rounded-full bg-[#ff2d55] pulse-dot"></span>LIVE</span>
+          <span class="mic hidden items-center gap-1 text-acid shrink-0">${icon('mic', 'size-3')}ON MIC</span>
+        </div>`}
 
-        <div class="pointer-events-auto absolute right-3 top-3 md:right-4 md:top-4 flex flex-col items-end gap-2">
+        <div class="right-col pointer-events-auto absolute right-3 top-3 md:right-4 md:top-4 flex flex-col items-end gap-2">
           <div class="flex items-center gap-1.5">
             <div class="status glass rounded-full px-3 h-9 text-[11px] font-semibold flex items-center gap-2">
               <span class="dot size-2 rounded-full bg-gold"></span><span class="label hidden sm:inline">CONNECTING</span>
               <span class="text-white/30 hidden sm:inline">|</span>${icon('users', 'size-3.5 text-white/60')}<span class="count">—</span>
             </div>
             <button class="mute act glass rounded-full size-9 grid place-items-center" aria-label="Mute">${icon('volume-2', 'size-4')}</button>
+            <button class="pov act glass rounded-full size-9 grid place-items-center border border-transparent" aria-label="POV view" aria-pressed="false" title="POV view (P)">${icon('eye', 'size-4')}</button>
+            <button class="drone act glass rounded-full size-9 grid place-items-center border border-transparent" aria-label="Drone cam" aria-pressed="false" title="Drone cam (B)">${icon('drone', 'size-4')}</button>
+            <button class="pip act glass rounded-full size-9 grid place-items-center border border-transparent" aria-label="Drone cam picture-in-picture" aria-pressed="false" title="Drone cam picture-in-picture (I)">${icon('picture-in-picture-2', 'size-4')}</button>
             <button class="settings act glass rounded-full size-9 grid place-items-center" aria-label="Settings">${icon('settings', 'size-4')}</button>
             <button class="help act glass rounded-full size-9 hidden md:grid place-items-center" aria-label="Controls">${icon('circle-help', 'size-4')}</button>
             <button class="fs act glass rounded-full size-9 hidden sm:grid place-items-center" aria-label="Fullscreen">${icon('maximize', 'size-4')}</button>
             ${isDJ ? `<button class="dj act rounded-xl h-9 px-3 flex items-center gap-1.5 font-display text-lg text-black" style="background:linear-gradient(90deg,#ff2bd6,#ffc400)" aria-label="DJ panel">${icon('headphones', 'size-4')}<span class="hidden sm:inline">DJ</span></button>` : ''}
           </div>
+          <div class="vip-slot contents"></div>
           <div class="vol hidden md:flex glass rounded-full h-8 px-3 items-center gap-2">
             ${icon('volume-2', 'size-3.5 text-white/60')}<input type="range" min="0" max="1" step="0.01" class="w-28 accent-[#00f0ff]" aria-label="Volume"/>
           </div>
           <div class="stats text-[10px] text-white/45 font-mono tracking-wider">-- FPS · -- ms</div>
-          <div class="embed hidden w-[220px] md:w-[260px] aspect-video rounded-xl overflow-hidden glass [&>iframe]:w-full [&>iframe]:h-full"></div>
+          ${isDJ ? `<div class="embed hidden w-[220px] md:w-[260px] aspect-video rounded-xl overflow-hidden bg-black border border-white/10 [&>iframe]:w-full [&>iframe]:h-full"></div>` : ''}
+        </div>
+
+        <div class="drone-tag hidden absolute left-1/2 -translate-x-1/2 top-[64px] md:top-4 glass rounded-full h-8 px-3.5 items-center gap-2 text-[11px] font-semibold tracking-[.22em] whitespace-nowrap">
+          <span class="size-2 rounded-full bg-[#ff2d55] pulse-dot"></span>DRONE CAM
+          <span class="hidden sm:inline text-white/45 font-normal tracking-normal">· drag to circle · ${isTouch ? 'tap the drone to land' : 'B to land'}</span>
         </div>
 
         <div class="announce hidden absolute left-1/2 -translate-x-1/2 top-[92px] md:top-24 w-[min(92vw,820px)] text-center pointer-events-none">
@@ -86,8 +113,12 @@ export class HUD {
         <div class="stream absolute right-2 md:right-6 bottom-[260px] md:bottom-24 w-24 h-[50vh] pointer-events-none overflow-visible"></div>
 
         <div class="dances pointer-events-auto absolute left-0 right-0 bottom-[calc(8px+env(safe-area-inset-bottom))] px-2 flex gap-1.5 overflow-x-auto no-scrollbar
-                    md:left-1/2 md:right-auto md:-translate-x-1/2 md:bottom-4 md:px-1.5 md:py-1.5 md:rounded-2xl md:glass md:gap-0.5 md:overflow-visible">
-          ${danceBtns}
+                    md:grid md:grid-cols-7 md:left-1/2 md:right-auto md:-translate-x-1/2 md:bottom-4 md:px-1.5 md:py-1.5 md:rounded-2xl md:glass md:gap-0.5 md:overflow-visible">
+          ${emoteBtnsMobile}${danceBtns}
+        </div>
+        <div class="emotes pointer-events-auto absolute hidden md:flex items-center left-1/2 -translate-x-1/2 bottom-[146px] glass rounded-2xl p-1 gap-0.5" role="group" aria-label="Rave emotes">
+          <span class="hidden md:block text-[10px] tracking-[.2em] text-white/45 font-semibold px-2">RAVE EMOTES</span>
+          ${emoteBtns}
         </div>
         <div class="reacts pointer-events-auto absolute right-3 bottom-[calc(68px+env(safe-area-inset-bottom))] flex flex-col gap-2.5
                     md:right-4 md:bottom-4 md:flex-row md:gap-0.5 md:p-1.5 md:rounded-2xl md:glass">
@@ -102,8 +133,8 @@ export class HUD {
           </div>
           <ul class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             ${(isTouch
-              ? [['Left stick', 'Walk (push far to run)'], ['Drag screen', 'Look around'], ['Pinch', 'Zoom'], ['Bottom bar', 'Dance moves'], ['Right rail', 'Reactions & chat']]
-              : [['W A S D / ←↑↓→', 'Walk · hold Shift to run'], ['Space', 'Jump'], ['Drag mouse', 'Orbit camera · wheel to zoom'], ['1 – 5 · 0', 'Dance moves · back to vibing'], ['Z X C V', 'Hearts · Fire · Confetti · Cheer'], ['Enter / T', 'Chat']]
+              ? [['Left stick', 'Walk (push far to run)'], ['Drag screen', 'Look around'], ['Pinch', 'Zoom'], ['Bottom bar', 'Dance moves (swipe for more)'], ['Rave emotes', 'Muzzing · Hakken · Groove · TikTok — tap again to stop'], ['Right rail', 'Reactions & chat'], ['Tap a name', 'Private chat with that raver'], ['Tap yourself', 'Say something above your head'], ['🍾 VIP', 'Order bottle service — free'], ['Tap a seat', 'Sit in the stands · turn to face the stage, along the row or the sky'], ['Eye button', 'POV — see through your eyes'], ['Drone button', 'Fly the camera around the rave'], ['Picture-in-picture', 'The live drone cam in a corner · tap it to ride along']]
+              : [['W A S D / ←↑↓→', 'Walk · hold Shift to run'], ['Space', 'Jump'], ['Drag mouse', 'Look around · wheel to zoom (out to the whole stadium)'], ['1 – 9 · Q E R F', 'Dance moves'], ['⇧1–⇧4 / Num 1–4', 'Rave emotes: Muzzing · Hakken · Groove · TikTok'], ['0', 'Back to vibing'], ['Click a name', 'Private chat with that raver'], ['Click yourself / Y', 'Say something above your head'], ['🍾 VIP', 'Order bottle service — free'], ['E · click a seat', 'Sit in the stands'], ['1 2 3 4 (seated)', 'Face the stage · left · right · the sky'], ['Space / W', 'Stand up'], ['P', 'POV — see through your eyes'], ['B', 'Drone cam · circles the stadium'], ['I', 'Live drone cam picture-in-picture · click it to ride along'], ['Z X C V', 'Hearts · Fire · Confetti · Cheer'], ['Enter / T', 'Chat']]
             ).map(([k, v]) => `<li class="contents"><span class="font-mono text-cyan text-xs mt-0.5 whitespace-nowrap">${k}</span><span class="text-white/80">${v}</span></li>`).join('')}
           </ul>
         </div>
@@ -117,8 +148,10 @@ export class HUD {
             <div class="flex gap-1.5">${['high', 'medium', 'low'].map((q) => `<button class="chip q flex-1 rounded-lg py-1.5 capitalize" data-q="${q}">${q}</button>`).join('')}</div></div>
           <div><div class="text-[11px] tracking-[.2em] text-white/45 mb-1.5 flex justify-between"><span>SIMULATED CROWD</span><span class="bots-n text-white/70">${settings.bots}</span></div>
             <input type="range" min="0" max="90" step="1" value="${settings.bots}" class="bots w-full accent-[#ff2bd6]" aria-label="Simulated crowd size"/></div>
+          <label class="flex items-center justify-between gap-3 cursor-pointer"><span>Show my name tag<span class="block text-[11px] text-white/45">Your name above your raver (others always see it)</span></span><input type="checkbox" class="mytag size-4 accent-[#ff2bd6]" ${settings.showMyTag !== false ? 'checked' : ''}/></label>
           <label class="flex items-center justify-between gap-3 cursor-pointer"><span>Reduce flashing lights</span><input type="checkbox" class="reduce size-4 accent-[#ff2bd6]" ${settings.reduceFlash ? 'checked' : ''}/></label>
           <label class="flex items-center justify-between gap-3 cursor-pointer"><span>Auto performance<span class="block text-[11px] text-white/45">Dynamic resolution · drops effects below 30 FPS</span></span><input type="checkbox" class="autoperf size-4 accent-[#ff2bd6]" ${settings.autoPerf !== false ? 'checked' : ''}/></label>
+          <label class="flex items-center justify-between gap-3 cursor-pointer"><span>Cinematic look<span class="block text-[11px] text-white/45">Film grade · lens streaks · grain · widescreen moments</span></span><input type="checkbox" class="cine size-4 accent-[#ff2bd6]" ${settings.cinematic !== false ? 'checked' : ''}/></label>
           <label class="flex items-center justify-between gap-3 cursor-pointer"><span>Auto pyro on drops</span><input type="checkbox" class="autofx size-4 accent-[#ff2bd6]" ${settings.autoFx ? 'checked' : ''}/></label>
         </div>
 
@@ -133,7 +166,8 @@ export class HUD {
       viz: $(n, '.viz'), disc: $(n, '.disc'), status: $(n, '.status'), stats: $(n, '.stats'),
       announce: $(n, '.announce'), hype: $(n, '.hype'), stream: $(n, '.stream'), embed: $(n, '.embed'),
     };
-    audio.mountEmbed(this.els.embed);
+    this.vipSlot = $(n, '.vip-slot'); // the VIP button goes here (top right, under the toolbar)
+    if (this.els.embed) audio.mountEmbed(this.els.embed); // DJ: the visible player (ravers keep the hidden one)
 
     this.chat = new Chat(n, {
       onSend: (t) => actions.chat(t),
@@ -143,9 +177,13 @@ export class HUD {
     if (isTouch) this.joystick = createJoystick(n, (x, y) => actions.joystick(x, y));
 
     $$(n, '[data-dance]').forEach((b) => b.addEventListener('click', () => actions.dance(b.dataset.dance)));
+    $$(n, '[data-emote]').forEach((b) => b.addEventListener('click', () => actions.emote(b.dataset.emote)));
     $$(n, '[data-react]').forEach((b) => b.addEventListener('click', () => actions.react(b.dataset.react)));
     $(n, '.chat-btn').addEventListener('click', () => this.chat.toggle());
     $(n, '.dj')?.addEventListener('click', () => actions.toggleDJ());
+    $(n, '.drone').addEventListener('click', () => actions.drone());
+    $(n, '.pip').addEventListener('click', () => actions.pip());
+    $(n, '.pov').addEventListener('click', () => actions.pov());
 
     // volume
     const volInputs = [$(n, '.vol input'), $(n, '.vol-m')];
@@ -182,6 +220,10 @@ export class HUD {
     const bots = $(n, '.bots');
     bots.addEventListener('input', () => ($(n, '.bots-n').textContent = bots.value));
     bots.addEventListener('change', () => actions.bots(Number(bots.value)));
+    $(n, '.mytag').addEventListener('change', (e) => {
+      settings.showMyTag = e.target.checked;
+      saveSettings();
+    });
     $(n, '.reduce').addEventListener('change', (e) => {
       settings.reduceFlash = e.target.checked;
       saveSettings();
@@ -191,13 +233,17 @@ export class HUD {
       saveSettings();
       actions.autoPerf?.(e.target.checked);
     });
+    $(n, '.cine').addEventListener('change', (e) => actions.cinematic?.(e.target.checked));
     $(n, '.autofx').addEventListener('change', (e) => {
       settings.autoFx = e.target.checked;
       saveSettings();
     });
 
     const unmute = $(n, '.unmute');
-    unmute.addEventListener('click', () => audio.init());
+    unmute.addEventListener('click', () => {
+      audio.init();
+      audio.embed.resume(); // a YouTube track the browser didn't let start on its own
+    });
     this.unmute = unmute;
 
     if (!load('erave.seenHelp', false)) {
@@ -206,13 +252,17 @@ export class HUD {
       setTimeout(() => helpCard.classList.add('hidden'), 12000);
     }
 
-    this.vizCtx = this.els.viz.getContext('2d');
+    this.vizCtx = this.els.viz?.getContext('2d');
     this.loop = this.loop.bind(this);
     requestAnimationFrame(this.loop);
   }
 
   loop() {
+    if (!this.vizCtx) return this.loopUnmute(); // ravers don't get the track card
     const M = this.audio.beat.state;
+    // The DJ's meter redraws when the spectrum does (~30 times a second), not on every frame.
+    if (M.fftVersion === this.vizVersion) return this.loopUnmute();
+    this.vizVersion = M.fftVersion;
     const c = this.els.viz;
     const w = c.clientWidth;
     const h = c.clientHeight;
@@ -235,18 +285,24 @@ export class HUD {
     const t = this.audio.track;
     if (t?.duration) this.els.prog.style.width = `${Math.min(100, (this.audio.position / t.duration) * 100)}%`;
     else this.els.prog.style.width = t ? '100%' : '0';
+    this.loopUnmute();
+  }
+
+  loopUnmute() {
     const suspended = this.audio.ctx && this.audio.ctx.state !== 'running';
-    this.unmute.classList.toggle('hidden', !suspended);
+    this.unmute.classList.toggle('hidden', !(suspended || this.audio.embed.blocked));
     requestAnimationFrame(this.loop);
   }
 
+  /** DJ only: ravers never see what's playing. */
   setTrack(t) {
+    if (!this.els.title) return;
     this.els.title.textContent = t ? t.title : 'Stage is quiet';
     this.els.artist.textContent = t ? `${t.artist}${t.type === 'stream' ? ' · LIVE RADIO' : t.type === 'synth' ? ` · ${t.bpm} BPM` : ''}` : '';
   }
 
   setHost(name) {
-    this.els.host.textContent = name;
+    if (this.els.host) this.els.host.textContent = name; // the DJ's card (ravers' pill just says LIVE)
   }
 
   setMicLive(live) {
@@ -285,6 +341,28 @@ export class HUD {
 
   setDance(id) {
     $$(this.node, '[data-dance]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.dance === id)));
+    $$(this.node, '[data-emote]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.emote === id)));
+  }
+
+  /** Seated in the stands: the dance and emote bars make way for the seat controls. */
+  setSeated(on) {
+    for (const sel of ['.dances', '.emotes']) $(this.node, sel).style.display = on ? 'none' : '';
+  }
+
+  setPov(on) {
+    $(this.node, '.pov').setAttribute('aria-pressed', String(on));
+  }
+
+  /** The picture-in-picture button: lit while the drone cam panel is on. */
+  setPip(on) {
+    $(this.node, '.pip').setAttribute('aria-pressed', String(on));
+  }
+
+  setDrone(on) {
+    $(this.node, '.drone').setAttribute('aria-pressed', String(on));
+    const tag = $(this.node, '.drone-tag');
+    tag.classList.toggle('hidden', !on);
+    tag.classList.toggle('flex', on);
   }
 
   announce(text, by) {

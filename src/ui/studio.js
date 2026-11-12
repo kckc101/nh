@@ -1,5 +1,6 @@
 // Avatar Studio: live 3D preview (dancing to the muffled music coming from the stage),
-// identity, skin, hair, outfit, rave gear and glow accent. Resolves with the profile.
+// identity, profile picture (shown as a circle on the avatar's face), skin, hair, outfit,
+// rave gear and glow accent. Resolves with the profile.
 
 import * as THREE from 'three';
 import { Avatar } from '../avatar/avatar.js';
@@ -7,7 +8,8 @@ import {
   SKIN_TONES, HAIR_STYLES, HAIR_COLORS, TOPS, TOP_COLORS, PANTS, PANTS_COLORS,
   HEADWEAR, EYEWEAR, HANDS, ACCENTS, normalizeAvatar, randomAvatar, accentColor,
 } from '../avatar/options.js';
-import { DANCES } from '../avatar/dances.js';
+import { DANCES, RAVE_EMOTES } from '../avatar/dances.js';
+import { processPhoto, isPhotoUrl } from '../avatar/photo.js';
 import { el, esc, toast, $, $$ } from './dom.js';
 import { icon, renderIcons } from './icons.js';
 
@@ -20,6 +22,7 @@ const swatches = (key, colors) =>
 
 export function showStudio({ root, audio, net, profile, wantsDJ, netReady }) {
   let cfg = normalizeAvatar(profile.avatar);
+  let photo = isPhotoUrl(profile.photo) ? profile.photo : null;
   const accentSw = ACCENTS.map(
     (a) => `<button type="button" class="swatch flex flex-col items-center gap-1.5 group" data-key="accent" data-val="${a.id}" style="--sw:${a.color}" aria-label="${a.label}">
       <span class="size-10 rounded-xl" style="background:${a.color};box-shadow:0 0 18px ${a.color}"></span>
@@ -29,7 +32,7 @@ export function showStudio({ root, audio, net, profile, wantsDJ, netReady }) {
   const node = el(`
     <section class="pointer-events-auto fixed inset-0 z-40 flex flex-col md:flex-row bg-night">
       <div class="preview relative flex-1 min-h-[38dvh] md:min-h-0 overflow-hidden"
-        style="background: radial-gradient(70% 60% at 50% 70%, #3a0d4f 0%, #14072a 55%, #07040d 100%)">
+        style="background: radial-gradient(70% 60% at 50% 70%, #24083a 0%, #0b041a 55%, #030207 100%)">
         <div class="absolute inset-x-0 bottom-0 h-1/2 opacity-40 pointer-events-none"
           style="background-image: linear-gradient(rgba(255,43,214,.45) 1px, transparent 1px), linear-gradient(90deg, rgba(0,240,255,.35) 1px, transparent 1px);
                  background-size: 40px 40px; transform: perspective(300px) rotateX(60deg); transform-origin: bottom; mask-image: linear-gradient(to top, #000, transparent)"></div>
@@ -46,7 +49,7 @@ export function showStudio({ root, audio, net, profile, wantsDJ, netReady }) {
         </header>
         <div class="dances absolute bottom-3 inset-x-0 flex md:justify-center gap-2 px-3 overflow-x-auto no-scrollbar">
           <button type="button" class="chip shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold glass" data-dance="idle">🎵 Vibe</button>
-          ${DANCES.map((d) => `<button type="button" class="chip shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold glass" data-dance="${d.id}">${d.icon} ${d.label}</button>`).join('')}
+          ${[...RAVE_EMOTES, ...DANCES].map((d) => `<button type="button" class="chip shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold glass" data-dance="${d.id}">${d.icon} ${d.label}</button>`).join('')}
         </div>
       </div>
 
@@ -58,6 +61,21 @@ export function showStudio({ root, audio, net, profile, wantsDJ, netReady }) {
                 <input name="raver" maxlength="18" class="field text-white" value="${esc(profile.name)}" placeholder="Your name" required/></label>
               <label class="flex flex-col gap-1 text-xs text-white/60">DJ tag / handle
                 <input name="handle" maxlength="18" class="field text-white" value="${esc(profile.tag)}" placeholder="@phnompenh"/></label>
+            </div>`)}
+          ${section('PROFILE PICTURE', `
+            <div class="flex items-center gap-4">
+              <div class="pf-preview relative size-[72px] shrink-0 rounded-full overflow-hidden grid place-items-center bg-white/5 border-2" style="border-color:var(--accent,#00f0ff);box-shadow:0 0 16px color-mix(in srgb,var(--accent,#00f0ff) 45%,transparent)">
+                <img class="pf-img hidden size-full object-cover" alt="Your profile picture"/>
+                <span class="pf-empty text-white/35">${icon('user', 'size-7')}</span>
+              </div>
+              <div class="flex flex-col gap-2 min-w-0">
+                <div class="flex flex-wrap gap-2">
+                  <label class="pf-upload chip rounded-lg px-3 py-1.5 text-sm font-medium cursor-pointer flex items-center gap-1.5">${icon('upload', 'size-4')}<span class="pf-label">Upload photo</span>
+                    <input type="file" accept="image/*" class="pf-file sr-only"/></label>
+                  <button type="button" class="pf-remove chip hidden rounded-lg px-3 py-1.5 text-sm font-medium">Remove</button>
+                </div>
+                <p class="text-[11px] text-white/45 leading-snug">Shown on your avatar's face and next to your name. Eyewear is hidden while a photo is on. Everyone at the rave can see it.</p>
+              </div>
             </div>`)}
           ${section('SKIN TONE', swatches('skin', SKIN_TONES))}
           ${section('HAIRSTYLE', `${chips('hair', HAIR_STYLES)}<div class="mt-3">${swatches('hairColor', HAIR_COLORS)}</div>`)}
@@ -114,6 +132,7 @@ export function showStudio({ root, audio, net, profile, wantsDJ, netReady }) {
   scene.add(platform, ring);
 
   const avatar = new Avatar(cfg, { name: profile.name || 'Raver', tag: profile.tag, tagScale: 0.55 });
+  avatar.setPhoto(photo);
   scene.add(avatar.root);
   let spin = 0.35;
   let spinVel = 0;
@@ -201,10 +220,44 @@ export function showStudio({ root, audio, net, profile, wantsDJ, netReady }) {
   refresh();
   avatar.setLabel(profile.name || 'Raver', profile.tag, wantsDJ);
 
+  // ---------------------------------------------------------------- profile picture
+  const pfImg = $(node, '.pf-img');
+  const pfFile = $(node, '.pf-file');
+  const showPhoto = () => {
+    pfImg.classList.toggle('hidden', !photo);
+    $(node, '.pf-empty').classList.toggle('hidden', !!photo);
+    $(node, '.pf-remove').classList.toggle('hidden', !photo);
+    $(node, '.pf-label').textContent = photo ? 'Change photo' : 'Upload photo';
+    if (photo) pfImg.src = photo;
+    else pfImg.removeAttribute('src');
+    avatar.setPhoto(photo);
+  };
+  pfFile.addEventListener('change', async () => {
+    const file = pfFile.files?.[0];
+    pfFile.value = ''; // picking the same file again still fires
+    if (!file) return;
+    const label = $(node, '.pf-label');
+    label.textContent = 'Processing…';
+    try {
+      photo = await processPhoto(file);
+      avatar.doCheer();
+    } catch (err) {
+      toast(err.message || 'Couldn’t use that photo.', 'error', 4000);
+    }
+    showPhoto();
+  });
+  $(node, '.pf-remove').addEventListener('click', () => {
+    photo = null;
+    showPhoto();
+  });
+  showPhoto();
+
   // ---------------------------------------------------------------- status
   const trackEl = $(node, '.track');
-  const offTrack = audio.on('track', (t) => (trackEl.textContent = t ? `♪ ${t.title} — ${t.artist}` : 'Stage is quiet'));
-  if (audio.track) trackEl.textContent = `♪ ${audio.track.title} — ${audio.track.artist}`;
+  // Only the host sees what's playing; ravers just hear it.
+  const showTrack = (t) => (trackEl.textContent = !t ? 'Stage is quiet' : wantsDJ ? `♪ ${t.title} — ${t.artist}` : '♪ The DJ is playing');
+  const offTrack = audio.on('track', showTrack);
+  if (audio.track) showTrack(audio.track);
   const netEl = $(node, '.net');
   let onlineCount = 0;
   const showNet = () => {
@@ -263,7 +316,7 @@ export function showStudio({ root, audio, net, profile, wantsDJ, netReady }) {
       node.style.transition = 'opacity .5s';
       node.style.opacity = '0';
       setTimeout(() => node.remove(), 520);
-      resolve({ profile: { name, tag, avatar: cfg }, djKey });
+      resolve({ profile: { name, tag, avatar: cfg, photo }, djKey });
     });
   });
 }

@@ -4,9 +4,11 @@
 // seeks itself to the same position.
 //
 //   music sources → input ─┬─→ analyser (beat/tempo/peaks, pre-volume so lights work muted)
-//                          └─→ lowpass ("outside the venue") → duck → limiter ─┐
-//   DJ live mic (WebRTC) ──────────────────────────────────────→ micGain ──────┤
-//                                                              MasterGain ←─────┘ → destination
+//                          └─→ lowpass ("outside the venue") → duck → eventDuck → limiter ─┐
+//   DJ live mic (WebRTC) ────────────────────────────────────────────────→ micGain ─────────┤
+//   stings (airhorn, siren) ─────────────────────────────────────────────→ fxBus ───────────┤
+//                                                                         MasterGain ←──────┘ → destination
+//   eventDuck dips the music for VIP shoutouts; stings ride over it on their own bus.
 //   Every audible WebAudio path ends in the single MasterGain, so the volume slider and
 //   mute control all of it. Embeds (YouTube/SoundCloud iframes) and no-CORS streams can't
 //   enter the graph; they get the same volume through their own player APIs.
@@ -186,7 +188,18 @@ class EmbedSource {
     if (this.playing && Math.abs(this.position - pos) < 4) return;
     this.pos = pos;
     this.at = performance.now();
-    this.playing = this.engine.embed.open(this.track, pos);
+    const embed = this.engine.embed;
+    this.playing = embed.open(this.track, pos);
+    embed.posFn = () => this.position;
+    // Its real length goes to the server, which can then move the playlist on by itself.
+    embed.onDuration = (s) => this.engine.emit('duration', this.track.uid, s);
+    // Finished (or blocked): report it like any other track end, so the playlist moves on.
+    // The server only accepts an end 5 s or more into a track, so a video that fails at once
+    // reports when that's passed.
+    embed.onEnded = () => {
+      const wait = Math.max(0, 5.5 - this.position) * 1000;
+      setTimeout(() => this.engine.track?.uid === this.track.uid && this.engine.emit('ended', this.track.uid), wait);
+    };
   }
 
   pause() {
@@ -220,6 +233,8 @@ export class AudioEngine extends Emitter {
     this.serverNow = () => Date.now();
     this.micEl = null;
     this.section = null; // current arrangement section of a synth track
+    this.eventDuckFactor = 1; // < 1 while a VIP shoutout ducks the music
+    this.muffleFactor = 1; // < 1 "outside the venue" (embeds can't be low-passed, so they're quieter)
   }
 
   async init() {
@@ -229,7 +244,9 @@ export class AudioEngine extends Emitter {
 
     this.input = ctx.createGain();
     this.analyser = ctx.createAnalyser();
-    this.analyser.fftSize = 2048;
+    // 512 bins of ~94 Hz: the kick band (35–120 Hz) still gets a bin of its own. Smaller (128:
+    // 375 Hz bins) would leave the kick detector reading the snare and vocals.
+    this.analyser.fftSize = 512;
     this.analyser.smoothingTimeConstant = 0.55;
     this.analyser.minDecibels = -85;
     this.analyser.maxDecibels = -15;
@@ -238,6 +255,10 @@ export class AudioEngine extends Emitter {
     this.filter.frequency.value = 20000;
     this.filter.Q.value = 0.9;
     this.duckGain = ctx.createGain();
+    this.eventDuck = ctx.createGain();
+    this.eventDuck.gain.value = this.eventDuckFactor;
+    this.fxBus = ctx.createGain();
+    this.fxBus.gain.value = 0.9;
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -9;
     limiter.knee.value = 6;
@@ -254,8 +275,9 @@ export class AudioEngine extends Emitter {
     const sink = ctx.createGain();
     sink.gain.value = 0;
     this.analyser.connect(sink).connect(ctx.destination);
-    this.input.connect(this.filter).connect(this.duckGain).connect(limiter).connect(this.master);
+    this.input.connect(this.filter).connect(this.duckGain).connect(this.eventDuck).connect(limiter).connect(this.master);
     this.micGain.connect(this.master);
+    this.fxBus.connect(this.master);
     this.master.connect(ctx.destination);
     this.beat.attach(this.analyser, ctx.sampleRate);
     this.setupOnsetWorklet(ctx);
@@ -371,13 +393,15 @@ export class AudioEngine extends Emitter {
     const v = this.outputLevel;
     if (this.master) this.master.gain.setTargetAtTime(this.gainFor(v), this.ctx.currentTime, 0.04);
     this.source?.setElementVolume?.(v);
-    this.embed.setVolume(v);
+    this.embed.setVolume(v * this.eventDuckFactor * this.muffleFactor);
     if (this.micEl && !this.micEl.muted) this.micEl.volume = v; // only when the mic bypasses WebAudio
     this.emit('volume', this.volume, this.muted);
   }
 
   /** Low-pass the mix — sounds like you're outside the venue while building your avatar. */
   setMuffled(on, seconds = 1.5) {
+    this.muffleFactor = on ? 0.4 : 1;
+    this.embed.setVolume(this.outputLevel * this.eventDuckFactor * this.muffleFactor);
     if (!this.ctx) return;
     const f = this.filter.frequency;
     const now = this.ctx.currentTime;
@@ -388,6 +412,131 @@ export class AudioEngine extends Emitter {
 
   setDuck(on) {
     if (this.ctx) this.duckGain.gain.setTargetAtTime(on ? 0.3 : 1, this.ctx.currentTime, 0.15);
+  }
+
+  // ------------------------------------------------------------ VIP shoutouts
+
+  /** Ease the music down by `db` (e.g. -3.5) over `seconds`. Stings and the mic are unaffected. */
+  duckMusic(db = -3.5, seconds = 0.5) {
+    this.eventDuckFactor = Math.pow(10, db / 20);
+    this.rampEventDuck(seconds);
+  }
+
+  /** Bring the music back to full level. */
+  releaseMusicDuck(seconds = 0.8) {
+    this.eventDuckFactor = 1;
+    this.rampEventDuck(seconds);
+  }
+
+  rampEventDuck(seconds) {
+    if (this.ctx) {
+      const g = this.eventDuck.gain;
+      const now = this.ctx.currentTime;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.linearRampToValueAtTime(this.eventDuckFactor, now + Math.max(0.01, seconds));
+    }
+    // Embedded players can't enter the graph: duck them through their own volume.
+    this.embed.setVolume(this.outputLevel * this.eventDuckFactor * this.muffleFactor);
+  }
+
+  /** One-shot sound effect on the fx bus: 'horn' (air horn) or 'siren'. */
+  playSting(kind = 'horn') {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return 0;
+    const t = ctx.currentTime + 0.03;
+    if (kind === 'siren') return this.siren(t, 1.6);
+    let at = t;
+    for (const len of [0.13, 0.13, 0.55]) {
+      this.hornBlast(at, len);
+      at += len + 0.07;
+    }
+    return at - t;
+  }
+
+  hornBlast(t, len) {
+    const ctx = this.ctx;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1150;
+    bp.Q.value = 0.55;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.015);
+    g.gain.setValueAtTime(0.3, t + Math.max(0.02, len - 0.03));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.06);
+    bp.connect(g).connect(this.fxBus);
+    for (const f of [466, 471, 934]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f * 0.93, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.04);
+      o.connect(bp);
+      o.start(t);
+      o.stop(t + len + 0.1);
+    }
+  }
+
+  siren(t, dur) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(760, t);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 1.6;
+    const depth = ctx.createGain();
+    depth.gain.value = 300;
+    lfo.connect(depth).connect(o.frequency);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2600;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.13, t + 0.08);
+    g.gain.setValueAtTime(0.13, t + dur - 0.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(lp).connect(g).connect(this.fxBus);
+    for (const n of [o, lfo]) {
+      n.start(t);
+      n.stop(t + dur + 0.05);
+    }
+    return dur;
+  }
+
+  /**
+   * DJ shoutout in the browser's speech voice. Resolves true when it finished, false when it
+   * was skipped (muted, unsupported) or failed; never takes longer than `maxMs`.
+   */
+  speak(text, maxMs = 9000) {
+    return new Promise((resolve) => {
+      const synth = window.speechSynthesis;
+      if (!synth || !window.SpeechSynthesisUtterance || this.outputLevel === 0) return resolve(false);
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'en-US';
+      u.rate = 1.04;
+      u.pitch = 0.75;
+      u.volume = Math.min(1, this.outputLevel * 1.2);
+      const voices = synth.getVoices();
+      u.voice =
+        voices.find((v) => /^en/i.test(v.lang) && /david|daniel|guy|male|google us english/i.test(v.name)) ||
+        voices.find((v) => /^en/i.test(v.lang)) ||
+        null;
+      let done = false;
+      const finish = (ok) => {
+        if (done) return;
+        done = true;
+        resolve(ok);
+      };
+      u.onend = () => finish(true);
+      u.onerror = () => finish(false);
+      setTimeout(() => finish(false), maxMs);
+      try {
+        synth.cancel();
+        synth.speak(u);
+      } catch {
+        finish(false);
+      }
+    });
   }
 
   /** Play the DJ's live mic through micGain → MasterGain (ducking the music meanwhile). */
@@ -426,6 +575,8 @@ export class AudioEngine extends Emitter {
   }
 
   mountEmbed(container) {
+    // A new home for the player (e.g. the DJ's visible one): reopen it there.
+    if (this.embed.container && this.embed.container !== container && this.source instanceof EmbedSource) this.source.playing = false;
     this.embed.mount(container);
     if (this.source instanceof EmbedSource && this.state) this.sync(this.state);
   }

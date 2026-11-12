@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "country-flag-emoji-polyfill": "^0.1.10",
+    "jsqr": "^1.4.0",
     "lucide": "^1.52.0",
     "socket.io-client": "^4.8.4",
     "three": "^0.186.1"

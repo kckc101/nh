@@ -2,14 +2,16 @@ import {
   createIcons, Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Flame, Heart, Music, Mic, MicOff, Send,
   Maximize, Minimize, Settings, Wifi, WifiOff, Users, Radio, Upload, Link, Zap, Sparkles, PartyPopper, Disc3,
   Megaphone, X, MessageCircle, ChevronUp, ChevronDown, Trash2, Headphones, CloudFog, Dices, Gauge, Lock,
-  Keyboard, Wind, Rocket, Hand, ListMusic, Plus, CircleHelp, Activity, Timer, AudioLines,
+  Keyboard, Wind, Rocket, Hand, ListMusic, Plus, CircleHelp, Activity, Timer, AudioLines, Drone, Eye, User,
+  Armchair, RotateCcw, RotateCw, Telescope, ArrowUpFromLine, PictureInPicture2, Ticket, ShieldCheck, Download, LockOpen, Camera, ImageUp, ScanQrCode, KeyRound, Printer,
 } from 'lucide';
 
 const icons = {
   Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Flame, Heart, Music, Mic, MicOff, Send, Maximize, Minimize,
   Settings, Wifi, WifiOff, Users, Radio, Upload, Link, Zap, Sparkles, PartyPopper, Disc3, Megaphone, X,
   MessageCircle, ChevronUp, ChevronDown, Trash2, Headphones, CloudFog, Dices, Gauge, Lock, Keyboard, Wind, Rocket,
-  Hand, ListMusic, Plus, CircleHelp, Activity, Timer, AudioLines,
+  Hand, ListMusic, Plus, CircleHelp, Activity, Timer, AudioLines, Drone, Eye, User,
+  Armchair, RotateCcw, RotateCw, Telescope, ArrowUpFromLine, PictureInPicture2, Ticket, ShieldCheck, Download, LockOpen, Camera, ImageUp, ScanQrCode, KeyRound, Printer,
 };
 
 /** Replace every `<i data-lucide="name">` inside root with its SVG. */

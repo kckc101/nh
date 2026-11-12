@@ -11,9 +11,15 @@
 //   SoundCloud iframes, streams without CORS) fall back to the track's or DJ's BPM.
 //
 // Onsets for the tempo come from an AudioWorklet on the audio thread (exact 100 Hz in audio
-// time) when available; otherwise from per-frame spectral flux on wall-clock time.
+// time) when available; otherwise from the frame-based spectral flux on wall-clock time.
+//
+// The analyser is read at ANALYSIS_HZ, not on every rendered frame: lights, the LED wall's
+// spectrum and the DJ's meter don't need more, and it keeps that work off most frames. The beat
+// clock (phase, beat count) still advances every frame.
 
 import { Emitter } from '../core/events.js';
+
+const ANALYSIS_HZ = 30;
 
 class TempoTracker {
   constructor() {
@@ -152,7 +158,9 @@ export class BeatDetector extends Emitter {
       phase: 0, beatCount: 0, bpm: 128, bpmSource: 'manual', confidence: 0,
       energy: 0, playing: false, analysed: false,
       fft: this.fft,
+      fftVersion: 0, // bumped when the spectrum changes (ANALYSIS_HZ), so its users upload it only then
     };
+    this.sinceAnalysis = 1;
     this.mean = 0.3;
     this.var = 0.01;
     this.prevE = 0;
@@ -224,6 +232,17 @@ export class BeatDetector extends Emitter {
     this.time += rdt;
     const S = this.state;
     S.playing = playing;
+    // Read the analyser (or move the stand-in spectrum) ANALYSIS_HZ times a second; adt is the
+    // time since the last read. Between reads the last levels stand.
+    this.sinceAnalysis += rdt;
+    const due = this.sinceAnalysis >= 1 / ANALYSIS_HZ - 0.002;
+    const adt = this.sinceAnalysis;
+    if (!due) {
+      this.advance(S, rdt, playing, S.analysed);
+      return S;
+    }
+    this.sinceAnalysis = 0;
+    S.fftVersion++;
     let analysed = false;
 
     if (playing && analysable && this.analyser) {
@@ -247,7 +266,7 @@ export class BeatDetector extends Emitter {
           if (a > peak) peak = a;
           sum += v * v;
         }
-        S.peak = Math.max(peak, S.peak - rdt * 1.5);
+        S.peak = Math.max(peak, S.peak - adt * 1.5);
         S.rms = Math.sqrt(sum / this.timeBuf.length);
 
         // Onset strength → tempo tracker.
@@ -256,7 +275,7 @@ export class BeatDetector extends Emitter {
 
         // Kick detection.
         const e = this.avg(this.kickBand);
-        const k = Math.min(1, rdt * 2.5);
+        const k = Math.min(1, adt * 2.5);
         this.mean += (e - this.mean) * k;
         const d = e - this.mean;
         this.var += (d * d - this.var) * k;
@@ -281,6 +300,21 @@ export class BeatDetector extends Emitter {
     S.bpmSource = tracked ? 'detected' : this.hintBpm ? 'track' : 'manual';
     S.confidence = this.tempo.confidence;
 
+    if (!analysed) {
+      // Nothing to analyse (YouTube, a no-CORS stream, silence): a spectrum that breathes on the beat.
+      const env = playing ? Math.pow(1 - S.phase, 3) : 0;
+      const k = 1 - Math.pow(0.7, adt * 60); // 0.3 a frame at 60 fps, whatever the rate
+      for (let i = 0; i < 64; i++) {
+        const target = playing ? Math.max(0, 210 * (1 - i / 80) * (0.45 + 0.55 * env) * (0.7 + 0.3 * Math.sin(this.time * 3 + i * 0.7))) : 0;
+        this.fft[i] += (target - this.fft[i]) * k;
+      }
+    }
+    this.advance(S, rdt, playing, analysed);
+    return S;
+  }
+
+  /** Every frame: the beat clock, and the levels' envelopes. */
+  advance(S, rdt, playing, analysed) {
     if (playing) {
       S.phase += (rdt * S.bpm) / 60;
       if (S.phase >= 1) {
@@ -299,10 +333,6 @@ export class BeatDetector extends Emitter {
       S.high = playing ? 0.25 + 0.1 * Math.sin(this.time * 3.7) : S.high * decay;
       S.peak *= decay;
       S.rms *= decay;
-      for (let i = 0; i < 64; i++) {
-        const target = playing ? Math.max(0, 210 * (1 - i / 80) * (0.45 + 0.55 * env) * (0.7 + 0.3 * Math.sin(this.time * 3 + i * 0.7))) : 0;
-        this.fft[i] += (target - this.fft[i]) * 0.3;
-      }
     }
 
     S.level = S.bass * 0.5 + S.mid * 0.35 + S.high * 0.15;
@@ -316,7 +346,6 @@ export class BeatDetector extends Emitter {
       this.minEnergy = S.energy;
       this.emit('surge');
     }
-    return S;
   }
 
   onKick(strength, synthetic) {

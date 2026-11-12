@@ -1,10 +1,14 @@
-// LED video wall: four audio-reactive visual programs rendered in a shader through an
+// LED video wall: five audio-reactive visual programs rendered in a shader through an
 // LED pixel-grid mask, plus a text layer for the logo, now-playing and DJ announcements.
+// "hardcore" is the drop's: a black-and-white checker tunnel racing on the bass, inverting on the
+// kick, with glitch bands (no inverting or glitching with "Reduce flashing lights").
 
 import * as THREE from 'three';
 import { canvasTexture, DISPLAY_FONT, KHMER_FONT } from './textures.js';
+import { settings } from '../core/device.js';
 
-export const LED_MODES = ['sunset', 'tunnel', 'bars', 'kaleido'];
+export const LED_MODES = ['sunset', 'tunnel', 'bars', 'kaleido', 'hardcore'];
+const TEXT_ASPECT = (1024 / 448).toFixed(4); // the text canvas: kept in proportion on any wall
 
 const shared = {
   uTime: { value: 0 },
@@ -17,10 +21,11 @@ const shared = {
   uColC: { value: new THREE.Color('#ffc400') },
   uFFT: { value: null },
   uText: { value: null },
+  uSafe: { value: 0 }, // "Reduce flashing lights": no inverting / glitching in the hardcore program
 };
 
 const fragment = /* glsl */ `
-uniform float uTime, uBass, uKick, uMode, uDim, uTextAmt, uAspect;
+uniform float uTime, uBass, uKick, uMode, uDim, uTextAmt, uAspect, uSafe;
 uniform vec2 uRes;
 uniform vec3 uColA, uColB, uColC;
 uniform sampler2D uFFT, uText;
@@ -120,6 +125,26 @@ vec3 modeKaleido(vec2 uv) {
   return col;
 }
 
+// Hardcore: a square checker tunnel racing toward you on the bass, black and white with the
+// look's colour in the light squares, inverting on the kick, torn by glitch bands.
+vec3 modeHardcore(vec2 uv) {
+  vec2 p = (uv - 0.5) * vec2(uAspect, 1.0);
+  float sq = max(abs(p.x), abs(p.y));
+  float z = 0.32 / max(sq, 0.02) + uTime * (2.2 + 2.5 * uBass);
+  float rings = step(0.5, fract(z));
+  float spokes = step(0.5, fract(atan(p.y, p.x) / PI * 6.0 + uTime * 0.4));
+  float v = abs(rings - spokes);
+  float wild = 1.0 - uSafe;
+  v = mix(v, 1.0 - v, step(0.62, uKick) * wild);
+  float band = floor(uv.y * 18.0);
+  float tick = floor(uTime * 12.0);
+  float g = step(0.86, fract(sin(band * 37.1 + tick * 11.7) * 4371.3));
+  v = mix(v, 1.0 - v, g * uBass * wild);
+  vec3 col = mix(vec3(0.0), mix(vec3(1.0), uColA, 0.35), v) * (0.65 + 0.9 * uKick);
+  col += uColB * smoothstep(0.03, 0.0, abs(fract(z) - 0.5) - 0.47) * 0.6; // the ring edges
+  return col * smoothstep(0.0, 0.08, sq); // a dark heart at the vanishing point
+}
+
 void main() {
   vec2 cell = vUv * uRes;
   vec2 uv = (floor(cell) + 0.5) / uRes;
@@ -127,8 +152,10 @@ void main() {
   if (uMode < 0.5) col = modeSunset(uv);
   else if (uMode < 1.5) col = modeTunnel(uv);
   else if (uMode < 2.5) col = modeBars(uv);
-  else col = modeKaleido(uv);
-  vec4 tx = texture2D(uText, uv);
+  else if (uMode < 3.5) col = modeKaleido(uv);
+  else col = modeHardcore(uv);
+  vec2 tuv = vec2((uv.x - 0.5) * uAspect / ${TEXT_ASPECT} + 0.5, uv.y); // the text in its own proportions
+  vec4 tx = (tuv.x < 0.0 || tuv.x > 1.0) ? vec4(0.0) : texture2D(uText, tuv);
   col = mix(col * (1.0 - 0.7 * uTextAmt * tx.a), tx.rgb * 1.6, tx.a * uTextAmt);
   vec2 f = fract(cell) - 0.5;
   float dotMask = smoothstep(0.5, 0.28, max(abs(f.x), abs(f.y)));
@@ -205,14 +232,19 @@ export class LedWall {
 
   update(dt, t, M, mood, palette) {
     shared.uTime.value = t;
+    shared.uSafe.value = settings.reduceFlash ? 1 : 0;
     shared.uBass.value = M.bass;
     shared.uKick.value = M.kick;
     shared.uDim.value = mood.ledDim;
     shared.uColA.value.copy(palette[0]);
     shared.uColB.value.copy(palette[1]);
     shared.uColC.value.copy(palette[2] || palette[0]);
-    this.fftTex.image.data.set(M.fft);
-    this.fftTex.needsUpdate = true;
+    if (M.fftVersion !== this.fftVersion) {
+      // The spectrum changes ~30 times a second (beat.js ANALYSIS_HZ): upload it only then.
+      this.fftVersion = M.fftVersion;
+      this.fftTex.image.data.set(M.fft);
+      this.fftTex.needsUpdate = true;
+    }
 
     let target;
     if (this.textHold > 0) {

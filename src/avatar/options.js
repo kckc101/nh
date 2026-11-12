@@ -20,15 +20,28 @@ export const TOPS = [
   { id: 'tee', label: 'Rave Tee' },
   { id: 'hoodie', label: 'Hoodie' },
   { id: 'tank', label: 'Mesh Tank' },
+  { id: 'crop', label: 'Crop Top' },
+  { id: 'bomber', label: 'LED Bomber' },
+  { id: 'jersey', label: 'Rave Jersey' },
+  { id: 'trackjkt', label: 'Track Jacket' },
+  { id: 'holo', label: 'Holo Suit' },
+  { id: 'apsara', label: 'Apsara Top' },
 ];
-export const TOP_COLORS = ['#ff2bd6', '#00e5ff', '#9dff00', '#ffd400', '#ff5a1f', '#c4122f', '#1d4ed8', '#1b1b2a', '#f2f2f2'];
+export const TOP_COLORS = [
+  '#ff2bd6', '#00e5ff', '#9dff00', '#ffd400', '#ff5a1f', '#c4122f', '#1d4ed8', '#1b1b2a', '#f2f2f2',
+  '#8b2cff', '#ff8fd0', '#3dffb0', '#c9ccd6', '#0b0b12',
+];
 
 export const PANTS = [
   { id: 'cargo', label: 'Cargo' },
   { id: 'track', label: 'Glow Track' },
   { id: 'shorts', label: 'Shorts' },
+  { id: 'tutu', label: 'Neon Tutu' },
+  { id: 'fluffies', label: 'Fluffies' },
+  { id: 'flare', label: 'Flares' },
+  { id: 'sampot', label: 'Sampot Wrap' },
 ];
-export const PANTS_COLORS = ['#1a1a24', '#2b3a67', '#4a4a52', '#e8e8e8', '#3d2b56', '#14532d', '#7a1d3a'];
+export const PANTS_COLORS = ['#1a1a24', '#2b3a67', '#4a4a52', '#e8e8e8', '#3d2b56', '#14532d', '#7a1d3a', '#ff2bd6', '#00c8e0', '#8b2cff', '#c9ccd6'];
 
 export const HEADWEAR = [
   { id: 'none', label: 'None' },
@@ -37,6 +50,9 @@ export const HEADWEAR = [
   { id: 'phones', label: 'Headphones' },
   { id: 'halo', label: 'Neon Halo' },
   { id: 'crown', label: 'Apsara Crown' },
+  { id: 'ears', label: 'Neon Cat Ears' },
+  { id: 'horns', label: 'LED Horns' },
+  { id: 'bandana', label: 'Kroma Bandana' },
 ];
 
 export const EYEWEAR = [
@@ -44,6 +60,8 @@ export const EYEWEAR = [
   { id: 'shutter', label: 'Glow Glasses' },
   { id: 'visor', label: 'Cyber Visor' },
   { id: 'round', label: 'Round Shades' },
+  { id: 'goggles', label: 'Rave Goggles' },
+  { id: 'ledmask', label: 'LED Face Mask' },
 ];
 
 export const HANDS = [
@@ -51,6 +69,8 @@ export const HANDS = [
   { id: 'bracelets', label: 'Glow Bracelets' },
   { id: 'sticks', label: 'Glow Sticks' },
   { id: 'gloves', label: 'LED Gloves' },
+  { id: 'kandi', label: 'Kandi Stacks' },
+  { id: 'poi', label: 'LED Poi' },
 ];
 
 export const ACCENTS = [
